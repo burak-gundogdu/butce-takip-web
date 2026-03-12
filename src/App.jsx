@@ -1237,6 +1237,18 @@ export default function App() {
       <div style={s.app}>
         {/* Header */}
         <div style={s.header}>
+          {/* Uygulama basligi ve gelistirici */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:18}}>₺</span>
+              <span style={{fontSize:13,fontWeight:800,color:C.text,letterSpacing:0.5}}>Butce Takip</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,background:'#ffffff08',borderRadius:20,padding:'4px 10px',border:`1px solid ${C.border}`}}>
+              <div style={{width:6,height:6,borderRadius:3,background:C.accent}}/>
+              <span style={{fontSize:10,color:C.muted}}>by </span>
+              <span style={{fontSize:10,fontWeight:700,color:C.accent}}>Burak Gundogdu</span>
+            </div>
+          </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
               <span style={s.label}>TOPLAM BAKIYE</span>
