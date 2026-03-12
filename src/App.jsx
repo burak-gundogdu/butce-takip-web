@@ -61,10 +61,10 @@ const monthKey = (d) => { const dt = d || new Date(); return `${dt.getMonth()+1}
 const monthLabel = k => { const [m,y]=k.split('/'); const n=['','Oca','Sub','Mar','Nis','May','Haz','Tem','Agu','Eyl','Eki','Kas','Ara']; return `${n[+m]} ${y.slice(2)}`; };
 
 async function yahooPrice(ticker) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  const res = await fetch(`/api/price?ticker=${encodeURIComponent(ticker)}`);
   const d = await res.json();
-  return d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  if (d.error) throw new Error(d.error);
+  return d.price;
 }
 async function fetchRates() {
   const [u, e] = await Promise.all([yahooPrice('USDTRY=X'), yahooPrice('EURTRY=X')]);
@@ -935,11 +935,11 @@ Ornekler:
 - "Maasum geldi 50000 lira" -> islem_ekle, gelir, Maas, 50000
 - "Portfoyum nasil?" -> bilgi`;
 
-async function callGroq(userMessage, apiKey, context) {
+async function callGroq(userMessage, context) {
   const ctx = `Bakiye: ${fmt(context.balance)} TL, Gelir: ${fmt(context.income)} TL, Gider: ${fmt(context.spent)} TL, Portfoy: ${fmt(context.portfolioVal)} TL`;
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "llama-3.1-8b-instant",
       max_tokens: 512,
@@ -951,7 +951,7 @@ async function callGroq(userMessage, apiKey, context) {
     }),
   });
   const d = await res.json();
-  if (d.error) throw new Error(d.error.message || "Groq API hatasi");
+  if (d.error) throw new Error(d.error.message || d.error || "Groq API hatasi");
   const text = d.choices?.[0]?.message?.content || "";
   return JSON.parse(text.replace(/```json|```/g, "").trim());
 }
@@ -961,7 +961,7 @@ function AssistantScreen({ data, setData }) {
   const [input, setInput] = useState('');
   const [loading, setL]   = useState(false);
   const bottomRef         = useRef(null);
-  const apiKey            = data.settings?.groqKey;
+
 
   useEffect(() => { bottomRef.current?.scrollIntoView({behavior:'smooth'}); }, [msgs]);
 
@@ -1003,14 +1003,14 @@ function AssistantScreen({ data, setData }) {
   const send = async () => {
     const text = input.trim();
     if (!text || loading) return;
-    if (!apiKey) { alert('Once Daha > Ayarlar ekranindan Groq API anahtarini gir.'); return; }
+
     setMsgs(m=>[...m,{id:Date.now(),role:'user',text}]);
     setInput('');
     setL(true);
     let usdTry = null;
     try { const r = await fetchRates(); usdTry = r.usdTry; } catch {}
     try {
-      const parsed = await callGroq(text, apiKey, buildCtx());
+      const parsed = await callGroq(text, buildCtx());
       const result = await execAction(parsed.islem, usdTry);
       setMsgs(m=>[...m,{id:Date.now()+1,role:'assistant',text:parsed.mesaj+(result?'\n\n'+result:'')}]);
     } catch(e) {
@@ -1023,10 +1023,7 @@ function AssistantScreen({ data, setData }) {
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      {!apiKey&&<div style={{background:C.yellowBg,border:`1px solid ${C.yellow}`,margin:12,borderRadius:12,padding:14}}>
-        <div style={{color:C.yellow,fontWeight:700,fontSize:13}}>API Anahtari Eksik</div>
-        <div style={{...s.tiny,color:C.yellow,marginTop:4}}>Daha &gt; Ayarlar ekranindan Groq API anahtarini gir.</div>
-      </div>}
+
 
       <div style={{flex:1,overflowY:'auto',padding:16}}>
         {msgs.map(msg=>(
@@ -1054,8 +1051,8 @@ function AssistantScreen({ data, setData }) {
       </div>
 
       <div style={{display:'flex',padding:12,paddingBottom:16,background:C.card,borderTop:`1px solid ${C.border}`,gap:10,flexShrink:0}}>
-        <input style={{...s.input,flex:1}} placeholder={apiKey?'Yaz... (orn: 5 adet THYAO aldim)':'Once API anahtarini gir...'}
-          value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} disabled={!apiKey} />
+        <input style={{...s.input,flex:1}} placeholder='Yaz... (orn: 5 adet THYAO aldim)'
+          value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} />
         <button onClick={send} disabled={loading||!input.trim()} style={{background:loading||!input.trim()?C.border:C.accent,border:'none',borderRadius:12,padding:'0 16px',fontWeight:800,fontSize:16,color:loading||!input.trim()?C.muted:'#0A0E1A',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
           {loading?<Spinner size={16}/>:null} Gonder
         </button>
@@ -1137,9 +1134,6 @@ function RecurTab({ data, setData }) {
 }
 
 function SettingsTab({ data, setData, user }) {
-  const [apiKey,setAK]=useState(data.settings?.groqKey||'');
-  const [showKey,setSK]=useState(false);
-  const saveKey = ()=>{ setData(d=>({...d,settings:{...d.settings,groqKey:apiKey.trim()}})); alert('Groq API anahtari kaydedildi'); };
   const resetAll = ()=>{ if(confirm('Tum veriler silinecek! Emin misiniz?')) { setData({...INIT}); alert('Veriler temizlendi.'); } };
   const exportCSV = ()=>{
     let csv='Tarih,Tur,Kategori,Tutar,Not\n';
@@ -1157,18 +1151,7 @@ function SettingsTab({ data, setData, user }) {
         <button onClick={()=>signOut(auth)} style={{...s.btn,background:C.border,color:C.dim,marginTop:12}}>Cikis Yap</button>
       </Card>
 
-      {/* Groq API */}
-      <Card style={{borderColor:C.accent}}>
-        <H title="Groq API Anahtari" sub="console.groq.com adresinden ucretsiz anahtar al" />
-        <div style={{display:'flex',gap:8,marginBottom:8}}>
-          <input style={{...s.input,flex:1,fontSize:12}} placeholder="gsk_..." type={showKey?'text':'password'} value={apiKey} onChange={e=>setAK(e.target.value)} />
-          <button onClick={()=>setSK(v=>!v)} style={{background:C.border,border:'none',borderRadius:10,padding:'0 10px',color:C.dim,cursor:'pointer'}}>{showKey?'Gizle':'Goster'}</button>
-        </div>
-        <button onClick={saveKey} style={{...s.btn,background:C.accentBg,border:`1px solid ${C.accent}`,color:C.accent}}>
-          {data.settings?.groqKey?'Anahtari Guncelle':'Anahtari Kaydet'}
-        </button>
-        {data.settings?.groqKey&&<div style={{...s.tiny,color:C.green,textAlign:'center',marginTop:6}}>Groq API anahtari kayitli</div>}
-      </Card>
+
 
       {/* Export */}
       <Card>
