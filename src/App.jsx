@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { auth, db } from './firebase.js';
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged, updateProfile,
+  signOut, onAuthStateChanged, updateProfile, getIdToken,
 } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, onSnapshot,
@@ -937,9 +937,16 @@ Ornekler:
 
 async function callGroq(userMessage, context) {
   const ctx = `Bakiye: ${fmt(context.balance)} TL, Gelir: ${fmt(context.income)} TL, Gider: ${fmt(context.spent)} TL, Portfoy: ${fmt(context.portfolioVal)} TL`;
+
+  // Firebase token al — sunucu bu kullanicinin gercek oldugunu dogrular
+  const token = await getIdToken(auth.currentUser, true);
+
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
       model: "llama-3.1-8b-instant",
       max_tokens: 512,
