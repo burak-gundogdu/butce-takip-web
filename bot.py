@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import time
+import re
 
 FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY")
 FIREBASE_PROJECT_ID = "butce-takip-d3682"
@@ -21,31 +22,38 @@ def fetch_news():
     rss_url = "https://api.rss2json.com/v1/api.json?rss_url=https://www.trthaber.com/ekonomi_articles.rss"
     res = requests.get(rss_url).json()
     if res.get("status") == "ok":
-        titles = [item["title"] for item in res["items"][:8]] # En güncel 8 haberi çek
+        titles = [item["title"] for item in res["items"][:10]] # Garantilemek icin 10 haber cek
         return "\n".join(titles)
     return ""
 
 def analyze_with_ai(news_text):
     if not news_text: return None
     
-    # DİKKAT: Artık tek bir nesne değil, 3'lü bir LİSTE (Array) istiyoruz.
-    system_prompt = """Sen uzman bir Wall Street finans analistisin. 
+    # YAPAY ZEKAYA KATI ŞABLON DAYATIYORUZ (Tembellik yapamaması için)
+    system_prompt = """Sen uzman bir finans analistisin. 
 Aşağıdaki haberlerden EN ÖNEMLİ 3 TANESİNİ seç.
-LÜTFEN SADECE AŞAĞIDAKİ GİBİ BİR JSON DİZİSİ (ARRAY) FORMATINDA YANIT VER. Başka hiçbir kelime yazma.
+YANITIN SADECE VE SADECE AŞAĞIDAKİ GİBİ 3 ELEMANLI BİR JSON DİZİSİ (ARRAY) OLMALIDIR. Başka hiçbir açıklama yazma!
 
 [
   {
     "baslik": "1. Haberin Başlığı",
-    "icerik": "1. Haberin Özeti",
-    "analiz": "Yapay zeka analiz yorumu...",
+    "icerik": "1. Haberin 2 cümlelik özeti",
+    "analiz": "Yapay zeka yorumun",
     "etiket": "🟢 Pozitif",
     "tip": "haber"
   },
   {
     "baslik": "2. Haberin Başlığı",
-    "icerik": "2. Haberin Özeti",
-    "analiz": "Yapay zeka analiz yorumu...",
+    "icerik": "2. Haberin 2 cümlelik özeti",
+    "analiz": "Yapay zeka yorumun",
     "etiket": "🔴 Riskli",
+    "tip": "haber"
+  },
+  {
+    "baslik": "3. Haberin Başlığı",
+    "icerik": "3. Haberin 2 cümlelik özeti",
+    "analiz": "Yapay zeka yorumun",
+    "etiket": "⚪ Nötr",
     "tip": "haber"
   }
 ]"""
@@ -57,17 +65,23 @@ LÜTFEN SADECE AŞAĞIDAKİ GİBİ BİR JSON DİZİSİ (ARRAY) FORMATINDA YANIT 
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"GÜNCEL HABERLER:\n{news_text}"}
         ],
-        "temperature": 0.2
+        "temperature": 0.1 # Halüsinasyon ve tembelliği minimuma indir
     }
     
     res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload).json()
     try:
         content = res["choices"][0]["message"]["content"]
-        json_str = content[content.find('['):content.rfind(']')+1]
-        return json.loads(json_str)
+        # AI'ın metni içinden sadece [...] köşeli parantezli diziyi (array) cımbızlıyoruz
+        match = re.search(r'\[.*\]', content, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            return json.loads(json_str)
+        else:
+            print("JSON Dizisi bulunamadi! AI Cevabi:", content)
+            return []
     except Exception as e:
         print("Yapay Zeka Hatasi:", e)
-        return None
+        return []
 
 def save_to_firestore(token, data):
     url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements"
@@ -94,15 +108,14 @@ def main():
     if ai_data_list and isinstance(ai_data_list, list):
         print("3. Firebase'e giris yapiliyor...")
         token = get_firebase_token()
-        print(f"4. {len(ai_data_list)} adet haber veritabanina kaydediliyor...")
+        print(f"4. Tam {len(ai_data_list)} adet haber veritabanina kaydediliyor...")
         
-        # Her bir haberi sırayla veritabanına kaydet
         for item in ai_data_list:
             save_to_firestore(token, item)
             
         print("🚀 ISLEM BASARIYLA TAMAMLANDI!")
     else:
-        print("❌ Haber analiz edilemedi veya format yanlis.")
+        print("❌ Haber listesi alinamadi.")
 
 if __name__ == "__main__":
     main()
