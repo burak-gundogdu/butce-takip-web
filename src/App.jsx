@@ -6,7 +6,11 @@ import {
 } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, onSnapshot,
+  collection, addDoc, deleteDoc, getDocs, query, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore';
+
+// ─── ADMIN ─────────────────────────────────────────────────────────────────
+const ADMIN_UID = 'kHtyEx0LG8VPuEYkj2JPNFZPRy12';
 
 // ─── RENKLER ───────────────────────────────────────────────────────────────
 const C = {
@@ -261,6 +265,8 @@ function HomeScreen({ data, setData, user }) {
   const upcoming = data.subscriptions.filter(s => { const d=new Date().getDate(); return s.day>=d && s.day-d<=5; }).sort((a,b)=>a.day-b.day);
   const unpaidDebts = (data.debts||[]).filter(d=>!d.paid);
 
+
+  const announcements = useAnnouncements();
   const loadRates = useCallback(async () => {
     setRL(true); setRE(null);
     try {
@@ -275,6 +281,12 @@ function HomeScreen({ data, setData, user }) {
 
   return (
     <div style={s.scrollArea}>
+      {/* Duyurular */}
+      {announcements.length > 0 && (
+        <div style={{marginBottom:4}}>
+          {announcements.map(ann => <AnnouncementCard key={ann.id} ann={ann} />)}
+        </div>
+      )}
       {/* Bakiye */}
       <Card style={{background:'#0D1B2A', borderColor:C.accentBg}}>
         <span style={s.label}>TOPLAM BAKIYE</span>
@@ -1185,6 +1197,229 @@ function SettingsTab({ data, setData, user }) {
   );
 }
 
+// ─── DUYURULAR HOOK ────────────────────────────────────────────────────────
+function useAnnouncements() {
+  const [announcements, setAnnouncements] = useState([]);
+  useEffect(() => {
+    const q = query(
+      collection(db, 'announcements'),
+      orderBy('createdAt', 'desc'),
+      limit(5)
+    );
+    const unsub = onSnapshot(q, snap => {
+      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, []);
+  return announcements;
+}
+
+// ─── DUYURU KARTI ──────────────────────────────────────────────────────────
+function AnnouncementCard({ ann }) {
+  const tipConfig = {
+    info:       { color: C.blue,   bg: C.blueBg,   icon: 'ℹ️' },
+    uyari:      { color: C.yellow, bg: C.yellowBg,  icon: '⚠️' },
+    guncelleme: { color: C.accent, bg: C.accentBg,  icon: '🆕' },
+    haber:      { color: C.purple, bg: C.purpleBg,  icon: '📰' },
+    sistem:     { color: C.orange, bg: '#1c0a00',   icon: '🔔' },
+  };
+  const cfg = tipConfig[ann.tip] || tipConfig.info;
+  const tarih = ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR') || '';
+  return (
+    <div style={{background:cfg.bg, border:`1px solid ${cfg.color}40`, borderRadius:12, padding:12, marginBottom:8}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+        <span style={{fontSize:14}}>{cfg.icon}</span>
+        <span style={{fontWeight:700,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
+        <span style={{fontSize:10,color:C.muted}}>{tarih}</span>
+      </div>
+      <div style={{fontSize:12,color:C.dim,lineHeight:'17px'}}>{ann.icerik}</div>
+      {ann.kaynak && <div style={{fontSize:10,color:cfg.color,marginTop:4}}>Kaynak: {ann.kaynak}</div>}
+    </div>
+  );
+}
+
+// ─── ADMİN EKRANI ──────────────────────────────────────────────────────────
+function AdminScreen({ user }) {
+  const [msgs, setMsgs]       = useState([{id:0, role:'admin', text:'Merhaba Burak! Yonetici asistanin hazir.\n\nOrnekler:\n"Bugun dolar haberi paylasimi yap"\n"Guncel haberleri cek ve paylasimi yap"\n"Yeni ozellik hakkinda duyuru olustur"\n"Kullanicilara bütce uyarisi gonder"'}]);
+  const [input, setInput]     = useState('');
+  const [loading, setL]       = useState(false);
+  const [annList, setAnnList] = useState([]);
+  const [stats, setStats]     = useState(null);
+  const bottomRef             = useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:'smooth'}); }, [msgs]);
+
+  // Duyurulari getir
+  useEffect(() => {
+    const q = query(collection(db, 'announcements'), orderBy('createdAt','desc'), limit(10));
+    const unsub = onSnapshot(q, snap => {
+      setAnnList(snap.docs.map(d => ({id:d.id,...d.data()})));
+    });
+    return unsub;
+  }, []);
+
+  // Kullanici istatistikleri
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        setStats({ userCount: usersSnap.size });
+      } catch {}
+    };
+    fetchStats();
+  }, []);
+
+  const deleteAnn = async (id) => {
+    if (!confirm('Bu duyuruyu sil?')) return;
+    await deleteDoc(doc(db, 'announcements', id));
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setMsgs(m => [...m, {id:Date.now(), role:'user', text}]);
+    setInput('');
+    setL(true);
+    try {
+      const token = await getIdToken(auth.currentUser, true);
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
+        body: JSON.stringify({ command: text }),
+      });
+      const parsed = await res.json();
+      if (parsed.error) throw new Error(parsed.error);
+
+      // Duyuru veya haber ise Firestore'a kaydet
+      if (['duyuru','haber','sistem'].includes(parsed.tur)) {
+        await addDoc(collection(db, 'announcements'), {
+          baslik: parsed.baslik,
+          icerik: parsed.icerik,
+          tip: parsed.tur === 'haber' ? 'haber' : parsed.tip || parsed.tur,
+          kaynak: parsed.kaynak || null,
+          createdAt: serverTimestamp(),
+        });
+        setMsgs(m => [...m, {id:Date.now()+1, role:'admin',
+          text: `✅ Yayinlandi! "${parsed.baslik}" — tum kullanicilar gorecek.`}]);
+      } else {
+        setMsgs(m => [...m, {id:Date.now()+1, role:'admin', text: parsed.mesaj || JSON.stringify(parsed)}]);
+      }
+    } catch(e) {
+      setMsgs(m => [...m, {id:Date.now()+1, role:'admin', text:'Hata: '+e.message, error:true}]);
+    }
+    setL(false);
+  };
+
+  const QUICK_CMDS = [
+    'Son dakika ekonomi haberlerini cek ve paylasim yap',
+    'Yeni ozellik eklendi duyurusu olustur',
+    'Kullanicilara butce uyarisi gonder',
+    'Dolar kuru hakkinda bilgi ver',
+    'Sistem bakimi hakkinda uyari olustur',
+  ];
+
+  const tipLabel = { info:'Bilgi', uyari:'Uyari', guncelleme:'Guncelleme', haber:'Haber', sistem:'Sistem' };
+  const tipColor = { info:C.blue, uyari:C.yellow, guncelleme:C.accent, haber:C.purple, sistem:C.orange };
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:C.bg}}>
+
+      {/* Admin header */}
+      <div style={{background:'#0D0A1A',borderBottom:`1px solid ${C.purple}40`,padding:'10px 16px',flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{width:8,height:8,borderRadius:4,background:C.purple}}/>
+            <span style={{fontWeight:800,fontSize:13,color:C.purple}}>YONETICI PANELI</span>
+          </div>
+          {stats && <span style={{fontSize:11,color:C.muted}}>{stats.userCount} kullanici</span>}
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column'}}>
+
+        {/* Istatistik kartlari */}
+        <div style={{padding:'12px 16px 0',display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          <div style={{background:C.purpleBg,border:`1px solid ${C.purple}40`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:10,color:C.muted,letterSpacing:'1px'}}>KULLANICI</div>
+            <div style={{fontSize:24,fontWeight:900,color:C.purple}}>{stats?.userCount || '-'}</div>
+          </div>
+          <div style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:12,padding:12}}>
+            <div style={{fontSize:10,color:C.muted,letterSpacing:'1px'}}>DUYURU</div>
+            <div style={{fontSize:24,fontWeight:900,color:C.accent}}>{annList.length}</div>
+          </div>
+        </div>
+
+        {/* Yayinlanan duyurular */}
+        {annList.length > 0 && (
+          <div style={{padding:'12px 16px 0'}}>
+            <div style={{fontSize:11,color:C.muted,fontWeight:700,marginBottom:8,letterSpacing:'1px'}}>YAYINDA</div>
+            {annList.map(ann => (
+              <div key={ann.id} style={{display:'flex',alignItems:'center',gap:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'8px 12px',marginBottom:6}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:700,color:tipColor[ann.tip]||C.text}}>{ann.baslik}</div>
+                  <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                    {tipLabel[ann.tip]||ann.tip} — {ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR')||''}
+                  </div>
+                </div>
+                <button onClick={()=>deleteAnn(ann.id)}
+                  style={{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:16,padding:4}}>
+                  X
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Chat */}
+        <div style={{flex:1,padding:'12px 16px'}}>
+          <div style={{fontSize:11,color:C.muted,fontWeight:700,marginBottom:8,letterSpacing:'1px'}}>ASISTAN</div>
+          {msgs.map(msg => (
+            <div key={msg.id} style={{display:'flex',justifyContent:msg.role==='user'?'flex-end':'flex-start',marginBottom:10}}>
+              <div style={{maxWidth:'88%',background:msg.role==='user'?'#1a0d2e':msg.error?C.redBg:C.card,
+                borderRadius:14,borderBottomRightRadius:msg.role==='user'?3:14,borderBottomLeftRadius:msg.role==='user'?14:3,
+                padding:'10px 12px',border:`1px solid ${msg.role==='user'?C.purple+'60':msg.error?C.red+'50':C.border}`}}>
+                {msg.role==='admin'&&<div style={{fontSize:9,color:C.purple,fontWeight:700,marginBottom:4}}>YONETİCİ AI</div>}
+                <div style={{color:msg.role==='user'?C.purple:C.text,fontSize:13,lineHeight:'19px',whiteSpace:'pre-wrap'}}>{msg.text}</div>
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{display:'flex',marginBottom:10}}>
+              <div style={{background:C.card,borderRadius:14,borderBottomLeftRadius:3,padding:12,border:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:8}}>
+                <Spinner size={14} color={C.purple}/><span style={{color:C.muted,fontSize:12}}>Isliyor...</span>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef}/>
+        </div>
+      </div>
+
+      {/* Hizli komutlar */}
+      <div style={{display:'flex',overflowX:'auto',borderTop:`1px solid ${C.border}`,padding:'8px 12px',gap:8,flexShrink:0}}>
+        {QUICK_CMDS.map((cmd,i)=>(
+          <button key={i} onClick={()=>setInput(cmd)}
+            style={{background:'#1a0d2e',border:`1px solid ${C.purple}40`,borderRadius:8,padding:'6px 12px',
+              color:C.purple,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+            {cmd}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div style={{display:'flex',padding:12,paddingBottom:16,background:C.card,borderTop:`1px solid ${C.border}`,gap:10,flexShrink:0}}>
+        <input style={{...s.input,flex:1}} placeholder="Komut ver... (orn: bugun dolar haberi paylasimi yap)"
+          value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} />
+        <button onClick={send} disabled={loading||!input.trim()}
+          style={{background:loading||!input.trim()?C.border:C.purple,border:'none',borderRadius:12,
+            padding:'0 16px',fontWeight:800,color:loading||!input.trim()?C.muted:'#fff',
+            cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
+          {loading?<Spinner size={16} color={C.purple}/>:null} Gonder
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── ANA UYGULAMA ──────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser]     = useState(undefined);
@@ -1229,6 +1464,8 @@ export default function App() {
   const bal    = (data.startBalance||0)+income-spent;
   const bPct   = data.budget?(spent/data.budget)*100:0;
 
+  const isAdmin = user?.uid === ADMIN_UID;
+
   const TABS = [
     {id:'home',   icon:'◉', label:'Genel'},
     {id:'budget', icon:'₺', label:'Butce'},
@@ -1250,10 +1487,19 @@ export default function App() {
               <span style={{fontSize:18}}>₺</span>
               <span style={{fontSize:13,fontWeight:800,color:C.text,letterSpacing:0.5}}>Butce Takip</span>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6,background:'#ffffff08',borderRadius:20,padding:'4px 10px',border:`1px solid ${C.border}`}}>
-              <div style={{width:6,height:6,borderRadius:3,background:C.accent}}/>
-              <span style={{fontSize:10,color:C.muted}}>by </span>
-              <span style={{fontSize:10,fontWeight:700,color:C.accent}}>Burak Gundogdu</span>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              {isAdmin && (
+                <button onClick={()=>setTab('admin')}
+                  style={{background:tab==='admin'?C.purpleBg:'#1a0d2e',border:`1px solid ${tab==='admin'?C.purple:C.purple+'50'}`,borderRadius:20,padding:'4px 10px',cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+                  <div style={{width:6,height:6,borderRadius:3,background:C.purple}}/>
+                  <span style={{fontSize:10,fontWeight:700,color:C.purple}}>Admin</span>
+                </button>
+              )}
+              <div style={{display:'flex',alignItems:'center',gap:6,background:'#ffffff08',borderRadius:20,padding:'4px 10px',border:`1px solid ${C.border}`}}>
+                <div style={{width:6,height:6,borderRadius:3,background:C.accent}}/>
+                <span style={{fontSize:10,color:C.muted}}>by </span>
+                <span style={{fontSize:10,fontWeight:700,color:C.accent}}>Burak Gundogdu</span>
+              </div>
             </div>
           </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -1279,6 +1525,7 @@ export default function App() {
           {tab==='stats'  && <StatsScreen  data={data} />}
           {tab==='ai'     && <AssistantScreen data={data} setData={setData} />}
           {tab==='more'   && <MoreScreen   data={data} setData={setData} user={user} />}
+          {tab==='admin'  && isAdmin && <AdminScreen user={user} />}
         </div>
 
         {/* Alt nav */}
