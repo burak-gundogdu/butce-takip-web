@@ -5,6 +5,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // Sadece admin token kabul et
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Yetkisiz' });
   const idToken = authHeader.split('Bearer ')[1];
@@ -24,45 +25,39 @@ export default async function handler(req, res) {
 
   const { command } = req.body;
 
-  // 1. CANLI DOLAR KURUNU YAHOO'DAN ÇEK
-  let finansContext = '';
-  try {
-    const yfRes = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/USDTRY=X');
-    const yfData = await yfRes.json();
-    const price = yfData.chart.result[0].meta.regularMarketPrice;
-    if (price) {
-      finansContext = `SU ANKI GERCEK DOLAR KURU: 1 USD = ${price.toFixed(2)} TL. (Dolar sorulursa KESINLIKLE bu gercek rakami kullan)`;
-    }
-  } catch { }
-
-  // 2. TÜRKİYE HABERLERİNİ "KÖPRÜ" İLE ÇEK (TRT Ekonomi -> rss2json)
+  // Haber cekme komutu
   let newsContext = '';
-  if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('ekonomi')) {
+  if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem')) {
     try {
-      // Doğrudan TRT'ye gitmek yerine rss2json köprüsünü kullanıyoruz. Siteler bunu engellemez.
-      const rssRes = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://www.trthaber.com/ekonomi_articles.rss');
-      const rssData = await rssRes.json();
-      
-      if (rssData.status === 'ok') {
-        const titles = rssData.items.slice(0, 10).map(item => item.title).join('\n');
-        newsContext = titles
-          ? `\nCANLI TURKIYE EKONOMI HABERLERI:\n${titles}\nGOREVIN: Sadece bu gercek haberlerden birini secerek duyuru olustur. Asla kafandan haber uydurma.`
-          : '';
-      }
-    } catch { }
+      const rssRes = await fetch('https://feeds.bbcturkce.com/bbcturkce/rss.xml', {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      const rssText = await rssRes.text();
+      const titles = [...rssText.matchAll(/<title><!\[CDATA\[(.+?)\]\]><\/title>/g)]
+        .slice(0, 8).map(m => m[1]).join('\n');
+      newsContext = titles
+        ? `\n\nSon dakika haberler (BBC Turkce):\n${titles}`
+        : '';
+    } catch { newsContext = ''; }
   }
 
-  const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin.
-Lutfen SADECE ve SADECE asagidaki JSON formatlarindan birini don. JSON disinda HICBIR metin yazma! Eger bana bir sey soylemek istersen bunu "mesaj" icine yaz.
+  const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin. Turkce konusursun.
+Asagidaki islemleri yapabilirsin:
 
-1. Duyuru olusturmak icin:
-{"tur":"duyuru", "baslik":"Gercek Haber Basligi", "icerik":"Detaylar", "tip":"info", "mesaj":"Duyuru eklendi"}
+1. Duyuru olustur:
+{"tur":"duyuru","baslik":"Baslik","icerik":"Detay","tip":"info"|"uyari"|"guncelleme"}
 
-2. Sadece konusmak icin:
-{"tur":"bilgi", "mesaj":"Sohbet cevabin"}
+2. Haber paylas (RSS'den cekilmis haberlerden birini sec):
+{"tur":"haber","baslik":"Haber basligi","icerik":"Kisa ozet","kaynak":"BBC Turkce"}
 
-DIKKAT: Sadece { ile baslayip } ile biten veriyi gonder. Kendin uydurma haberler KESINLIKLE YAZMA.
-${finansContext}
+3. Sistem mesaji:
+{"tur":"sistem","baslik":"Baslik","icerik":"Mesaj"}
+
+4. Sadece konusmak istiyorsan:
+{"tur":"bilgi","mesaj":"Cevabın buraya"}
+
+Her zaman gecerli JSON don. Markdown veya kod blogu kullanma.
+Duyuru veya haber olusturuldugunda mesaj alanina da ne yaptigini yaz.
 ${newsContext}`;
 
   try {
@@ -72,7 +67,7 @@ ${newsContext}`;
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         max_tokens: 800,
-        temperature: 0.1, 
+        temperature: 0.2,
         messages: [
           { role: 'system', content: ADMIN_SYSTEM },
           { role: 'user', content: command },
@@ -81,21 +76,9 @@ ${newsContext}`;
     });
     const groqData = await groqRes.json();
     if (groqData.error) throw new Error(groqData.error.message);
-    
-    let text = groqData.choices?.[0]?.message?.content || '';
-    
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      text = jsonMatch[0];
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      parsed = { tur: 'bilgi', mesaj: text };
-    }
-    
+    const text = groqData.choices?.[0]?.message?.content || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
     res.status(200).json(parsed);
   } catch (e) {
     res.status(500).json({ error: e.message });

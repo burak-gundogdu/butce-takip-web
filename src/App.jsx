@@ -267,16 +267,6 @@ function HomeScreen({ data, setData, user }) {
 
 
   const announcements = useAnnouncements();
-  // Okunan haberleri telefonun hafızasında (localStorage) tutuyoruz ki tekrar çıkmasın
-  const [dismissed, setDismissed] = useState(() => JSON.parse(localStorage.getItem('dismissedNews') || '[]'));
-  
-  const handleDismiss = (id) => {
-    const newDismissed = [...dismissed, id];
-    setDismissed(newDismissed);
-    localStorage.setItem('dismissedNews', JSON.stringify(newDismissed));
-  };
-
-  const visibleAnnouncements = announcements.filter(a => !dismissed.includes(a.id));
   const loadRates = useCallback(async () => {
     setRL(true); setRE(null);
     try {
@@ -292,24 +282,9 @@ function HomeScreen({ data, setData, user }) {
   return (
     <div style={s.scrollArea}>
       {/* Duyurular */}
-      {/* 🚀 AKILLI HABER AKIŞI (Yatay Kaydırmalı) */}
-      {visibleAnnouncements.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.muted, marginBottom: 8, paddingLeft: 4, letterSpacing: '1px' }}>
-            PİYASA ÖZETİ (KAYDIR →)
-          </div>
-          <div style={{ 
-            display: 'flex', overflowX: 'auto', gap: 12, paddingBottom: 10,
-            scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch',
-            scrollbarWidth: 'none' /* Firefox için gizle */
-          }}>
-            {/* Scrollbar'ı Chrome/Safari için gizleyen minik bir style eklentisi */}
-            <style>{`::-webkit-scrollbar { display: none; }`}</style>
-            
-            {visibleAnnouncements.map(ann => (
-              <SmartNewsCard key={ann.id} ann={ann} onDismiss={handleDismiss} />
-            ))}
-          </div>
+      {announcements.length > 0 && (
+        <div style={{marginBottom:4}}>
+          {announcements.map(ann => <AnnouncementCard key={ann.id} ann={ann} />)}
         </div>
       )}
       {/* Bakiye */}
@@ -1239,50 +1214,26 @@ function useAnnouncements() {
   return announcements;
 }
 
-// ─── AKILLI HABER / DUYURU KARTI ──────────────────────────────────────────
-function SmartNewsCard({ ann, onDismiss }) {
-  const isNews = ann.tip === 'haber';
-  const badgeColor = ann.etiket?.includes('Pozitif') ? C.green : ann.etiket?.includes('Risk') ? C.red : C.accent;
-  
+// ─── DUYURU KARTI ──────────────────────────────────────────────────────────
+function AnnouncementCard({ ann }) {
+  const tipConfig = {
+    info:       { color: C.blue,   bg: C.blueBg,   icon: 'ℹ️' },
+    uyari:      { color: C.yellow, bg: C.yellowBg,  icon: '⚠️' },
+    guncelleme: { color: C.accent, bg: C.accentBg,  icon: '🆕' },
+    haber:      { color: C.purple, bg: C.purpleBg,  icon: '📰' },
+    sistem:     { color: C.orange, bg: '#1c0a00',   icon: '🔔' },
+  };
+  const cfg = tipConfig[ann.tip] || tipConfig.info;
+  const tarih = ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR') || '';
   return (
-    <div style={{
-      minWidth: '85%', maxWidth: '85%', flexShrink: 0,
-      background: isNews ? '#151C2F' : C.card,
-      border: `1px solid ${isNews ? badgeColor + '50' : C.border}`,
-      borderRadius: 16, padding: 16, position: 'relative',
-      scrollSnapAlign: 'start', display: 'flex', flexDirection: 'column'
-    }}>
-      {/* Üst Kısım: Etiket ve Kapat Butonu */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        {isNews ? (
-          <span style={{ background: badgeColor + '20', color: badgeColor, fontSize: 11, fontWeight: 800, padding: '4px 8px', borderRadius: 8 }}>
-            {ann.etiket || '⚡ AI Analizi'}
-          </span>
-        ) : (
-          <span style={{ background: C.blue + '20', color: C.blue, fontSize: 11, fontWeight: 800, padding: '4px 8px', borderRadius: 8 }}>
-            📢 Duyuru
-          </span>
-        )}
-        <button onClick={() => onDismiss(ann.id)} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>
-          ×
-        </button>
+    <div style={{background:cfg.bg, border:`1px solid ${cfg.color}40`, borderRadius:12, padding:12, marginBottom:8}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+        <span style={{fontSize:14}}>{cfg.icon}</span>
+        <span style={{fontWeight:700,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
+        <span style={{fontSize:10,color:C.muted}}>{tarih}</span>
       </div>
-
-      {/* Başlık ve İçerik */}
-      <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6, lineHeight: '20px' }}>
-        {ann.baslik}
-      </div>
-      <div style={{ fontSize: 13, color: C.dim, marginBottom: 12, lineHeight: '18px' }}>
-        {ann.icerik}
-      </div>
-
-      {/* Yapay Zeka Yorumu (Eğer varsa) */}
-      {ann.analiz && (
-        <div style={{ marginTop: 'auto', background: '#0A0E1A', borderLeft: `3px solid ${badgeColor}`, padding: '10px 12px', borderRadius: '0 8px 8px 0' }}>
-          <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, marginBottom: 4 }}>YAPAY ZEKA NE DİYOR?</div>
-          <div style={{ fontSize: 12, color: C.silver, lineHeight: '16px' }}>{ann.analiz}</div>
-        </div>
-      )}
+      <div style={{fontSize:12,color:C.dim,lineHeight:'17px'}}>{ann.icerik}</div>
+      {ann.kaynak && <div style={{fontSize:10,color:cfg.color,marginTop:4}}>Kaynak: {ann.kaynak}</div>}
     </div>
   );
 }
@@ -1469,6 +1420,307 @@ function AdminScreen({ user }) {
   );
 }
 
+// ─── HABER FEED EKRANI ─────────────────────────────────────────────────────
+function NewsFeedScreen() {
+  const [cards, setCards]     = useState([]);
+  const [idx, setIdx]         = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [swipeDir, setSwipe]  = useState(null); // 'left' | 'right' | 'up' | 'down'
+  const [saved, setSaved]     = useState([]);
+  const [showSaved, setShowS] = useState(false);
+  const [drag, setDrag]       = useState({ x: 0, y: 0, dragging: false });
+  const startRef              = useRef(null);
+  const cardRef               = useRef(null);
+
+  // Firestore'dan haberleri çek
+  useEffect(() => {
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(30));
+    const unsub = onSnapshot(q, snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setCards(docs);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const current = cards[idx];
+  const progress = cards.length ? ((idx) / cards.length) * 100 : 0;
+
+  const tipCfg = {
+    haber:      { color: C.purple, bg: '#0f0a1f', icon: '📰', label: 'Haber' },
+    info:       { color: C.blue,   bg: '#070d1f', icon: 'ℹ️',  label: 'Bilgi' },
+    uyari:      { color: C.yellow, bg: '#100e00', icon: '⚠️',  label: 'Uyarı' },
+    guncelleme: { color: C.accent, bg: '#041510', icon: '🆕',  label: 'Güncelleme' },
+    sistem:     { color: C.orange, bg: '#120600', icon: '🔔',  label: 'Sistem' },
+  };
+
+  const goNext = (dir) => {
+    if (idx >= cards.length - 1) return;
+    setSwipe(dir || 'up');
+    setTimeout(() => { setIdx(i => i + 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); }, 280);
+  };
+  const goPrev = () => {
+    if (idx === 0) return;
+    setSwipe('down');
+    setTimeout(() => { setIdx(i => i - 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); }, 280);
+  };
+  const saveCard = () => {
+    if (current && !saved.find(s => s.id === current.id)) setSaved(s => [...s, current]);
+    goNext('right');
+  };
+  const skipCard = () => goNext('left');
+
+  // Touch handlers
+  const onTouchStart = (e) => {
+    const t = e.touches[0];
+    startRef.current = { x: t.clientX, y: t.clientY };
+    setDrag({ x: 0, y: 0, dragging: true });
+  };
+  const onTouchMove = (e) => {
+    if (!startRef.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startRef.current.x;
+    const dy = t.clientY - startRef.current.y;
+    setDrag({ x: dx, y: dy, dragging: true });
+  };
+  const onTouchEnd = () => {
+    const { x, y } = drag;
+    const threshold = 60;
+    if (Math.abs(x) > Math.abs(y)) {
+      if (x > threshold) saveCard();
+      else if (x < -threshold) skipCard();
+      else setDrag({ x:0, y:0, dragging:false });
+    } else {
+      if (y < -threshold) goNext('up');
+      else if (y > threshold) goPrev();
+      else setDrag({ x:0, y:0, dragging:false });
+    }
+    startRef.current = null;
+  };
+
+  // Keyboard support
+  useEffect(() => {
+    const h = (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') goNext('up');
+      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') goPrev();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [idx, cards.length]);
+
+  // Kaydedilenler ekranı
+  if (showSaved) {
+    return (
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:'#0D0A1A',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <button onClick={()=>setShowS(false)} style={{background:'none',border:'none',color:C.accent,fontSize:20,cursor:'pointer'}}>←</button>
+          <span style={{fontWeight:800,fontSize:14,color:C.text}}>Kaydedilenler ({saved.length})</span>
+        </div>
+        <div style={s.scrollArea}>
+          {saved.length === 0
+            ? <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>Henuz kaydettigin haber yok.<br/>Haberleri saga kaydirarak kaydet.</div>
+            : saved.map((ann,i) => {
+                const cfg = tipCfg[ann.tip] || tipCfg.info;
+                return (
+                  <div key={i} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:14,padding:16,marginBottom:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                      <span style={{fontSize:18}}>{cfg.icon}</span>
+                      <span style={{fontWeight:800,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
+                    </div>
+                    <div style={{fontSize:13,color:C.dim,lineHeight:'19px',marginBottom:6}}>{ann.icerik}</div>
+                    {ann.analiz && <div style={{fontSize:12,color:cfg.color,background:`${cfg.color}15`,borderRadius:8,padding:'6px 10px',marginTop:6}}>💡 {ann.analiz}</div>}
+                    {ann.etiket && <div style={{fontSize:11,fontWeight:700,color:cfg.color,marginTop:6}}>{ann.etiket}</div>}
+                    <button onClick={()=>setSaved(s=>s.filter((_,j)=>j!==i))}
+                      style={{background:'none',border:`1px solid ${C.border}`,borderRadius:8,padding:'5px 10px',color:C.muted,fontSize:11,cursor:'pointer',marginTop:8}}>
+                      Kaldir
+                    </button>
+                  </div>
+                );
+              })
+          }
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',gap:12}}>
+      <Spinner size={36}/>
+      <span style={{color:C.muted,fontSize:13}}>Haberler yukleniyor...</span>
+    </div>
+  );
+
+  if (cards.length === 0) return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
+      <div style={{fontSize:48,marginBottom:12}}>📭</div>
+      <div style={{color:C.text,fontWeight:700,fontSize:16,marginBottom:8}}>Henuz haber yok</div>
+      <div style={{color:C.muted,fontSize:13}}>Bot yakininda otomatik haber paylasmaya baslayacak.</div>
+    </div>
+  );
+
+  if (idx >= cards.length) return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
+      <div style={{fontSize:56,marginBottom:16}}>🎉</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:18,marginBottom:8}}>Hepsini okudun!</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:24}}>Bugun icin tum haberler bu kadar.</div>
+      <button onClick={()=>setIdx(0)} style={{...s.btn,width:'auto',padding:'12px 32px'}}>Bastan Baslat</button>
+      {saved.length > 0 && (
+        <button onClick={()=>setShowS(true)} style={{...s.btnSec,width:'auto',padding:'12px 32px',marginTop:0}}>
+          Kaydedilenleri Gor ({saved.length})
+        </button>
+      )}
+    </div>
+  );
+
+  const cfg = tipCfg[current?.tip] || tipCfg.info;
+
+  // Swipe animasyonu
+  const cardStyle = (() => {
+    if (swipeDir === 'left')  return { transform:'translateX(-120%) rotate(-15deg)', opacity:0, transition:'all 0.28s ease' };
+    if (swipeDir === 'right') return { transform:'translateX(120%) rotate(15deg)',  opacity:0, transition:'all 0.28s ease' };
+    if (swipeDir === 'up')    return { transform:'translateY(-110%)', opacity:0, transition:'all 0.28s ease' };
+    if (swipeDir === 'down')  return { transform:'translateY(110%)',  opacity:0, transition:'all 0.28s ease' };
+    if (drag.dragging && (Math.abs(drag.x) > 5 || Math.abs(drag.y) > 5)) {
+      const rot = drag.x * 0.08;
+      return { transform:`translate(${drag.x}px, ${drag.y}px) rotate(${rot}deg)`, transition:'none' };
+    }
+    return { transform:'translateX(0) rotate(0deg) translateY(0)', opacity:1, transition:'all 0.2s ease' };
+  })();
+
+  // Sürükleme rengi ipucu
+  const swipeHint = drag.dragging
+    ? drag.x > 40  ? { label:'KAYDET', color:C.accent, opacity: Math.min(Math.abs(drag.x)/80,1) }
+    : drag.x < -40 ? { label:'GEC',    color:C.red,    opacity: Math.min(Math.abs(drag.x)/80,1) }
+    : drag.y < -40 ? { label:'SONRAKI',color:C.blue,   opacity: Math.min(Math.abs(drag.y)/80,1) }
+    : drag.y > 40  ? { label:'ONCEKI', color:C.yellow,  opacity: Math.min(Math.abs(drag.y)/80,1) }
+    : null : null;
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:cfg.bg,transition:'background 0.4s'}}>
+      {/* Üst bar */}
+      <div style={{padding:'12px 16px 8px',flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:14}}>{cfg.icon}</span>
+            <span style={{fontSize:11,fontWeight:700,color:cfg.color,letterSpacing:'1px'}}>{cfg.label?.toUpperCase()}</span>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:11,color:C.muted}}>{idx+1} / {cards.length}</span>
+            {saved.length > 0 && (
+              <button onClick={()=>setShowS(true)}
+                style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'4px 10px',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                🔖 {saved.length}
+              </button>
+            )}
+          </div>
+        </div>
+        {/* Progress bar */}
+        <div style={{height:3,background:'#ffffff10',borderRadius:2,overflow:'hidden'}}>
+          <div style={{height:'100%',width:`${progress}%`,background:cfg.color,borderRadius:2,transition:'width 0.3s'}}/>
+        </div>
+      </div>
+
+      {/* Kart alanı */}
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'8px 16px',position:'relative',overflow:'hidden'}}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+
+        {/* Swipe hint overlay */}
+        {swipeHint && (
+          <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
+            fontSize:28,fontWeight:900,color:swipeHint.color,opacity:swipeHint.opacity,
+            border:`3px solid ${swipeHint.color}`,borderRadius:12,padding:'8px 20px',
+            pointerEvents:'none',zIndex:10,letterSpacing:2}}>
+            {swipeHint.label}
+          </div>
+        )}
+
+        {/* Sonraki kart (arka planda) */}
+        {cards[idx+1] && (
+          <div style={{position:'absolute',inset:'8px 20px',borderRadius:24,
+            background:(tipCfg[cards[idx+1]?.tip]||tipCfg.info).bg,
+            border:`1px solid ${(tipCfg[cards[idx+1]?.tip]||tipCfg.info).color}30`,
+            transform:'scale(0.94) translateY(12px)',zIndex:0}}>
+          </div>
+        )}
+
+        {/* Ana kart */}
+        <div ref={cardRef} style={{position:'relative',zIndex:1,background:`${cfg.bg}`,
+          border:`1px solid ${cfg.color}50`,borderRadius:24,padding:24,
+          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',cursor:'grab',...cardStyle}}>
+
+          {/* Tarih */}
+          <div style={{fontSize:10,color:C.muted,marginBottom:16,letterSpacing:'1px'}}>
+            {current?.createdAt?.toDate?.()?.toLocaleDateString('tr-TR',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) || ''}
+          </div>
+
+          {/* Başlık */}
+          <div style={{fontSize:20,fontWeight:900,color:C.text,lineHeight:'26px',marginBottom:14}}>
+            {current?.baslik}
+          </div>
+
+          {/* İçerik */}
+          <div style={{fontSize:14,color:C.dim,lineHeight:'22px',marginBottom:16}}>
+            {current?.icerik}
+          </div>
+
+          {/* AI analizi */}
+          {current?.analiz && (
+            <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:14,padding:14,marginBottom:14}}>
+              <div style={{fontSize:10,color:cfg.color,fontWeight:700,letterSpacing:'1px',marginBottom:6}}>💡 AI ANALİZİ</div>
+              <div style={{fontSize:13,color:cfg.color,lineHeight:'19px'}}>{current.analiz}</div>
+            </div>
+          )}
+
+          {/* Etiket */}
+          {current?.etiket && (
+            <div style={{display:'inline-block',background:`${cfg.color}20`,borderRadius:20,
+              padding:'6px 14px',fontSize:13,fontWeight:700,color:cfg.color}}>
+              {current.etiket}
+            </div>
+          )}
+
+          {/* Kaynak */}
+          {current?.kaynak && (
+            <div style={{fontSize:11,color:C.muted,marginTop:10}}>Kaynak: {current.kaynak}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Swipe butonları */}
+      <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:20,padding:'12px 16px 20px',flexShrink:0}}>
+        <button onClick={goPrev} disabled={idx===0}
+          style={{width:48,height:48,borderRadius:24,background:idx===0?'#111':'#1c1400',border:`2px solid ${idx===0?C.border:C.yellow}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:20,opacity:idx===0?0.3:1}}>
+          ↑
+        </button>
+        <button onClick={skipCard}
+          style={{width:58,height:58,borderRadius:29,background:C.redBg,border:`2px solid ${C.red}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:24}}>
+          ✕
+        </button>
+        <button onClick={saveCard}
+          style={{width:58,height:58,borderRadius:29,background:C.accentBg,border:`2px solid ${C.accent}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:22}}>
+          🔖
+        </button>
+        <button onClick={()=>goNext('up')} disabled={idx>=cards.length-1}
+          style={{width:48,height:48,borderRadius:24,background:idx>=cards.length-1?'#111':'#070d1f',
+            border:`2px solid ${idx>=cards.length-1?C.border:C.blue}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:20,opacity:idx>=cards.length-1?0.3:1}}>
+          ↓
+        </button>
+      </div>
+
+      {/* Swipe ipucu (ilk kart) */}
+      {idx === 0 && cards.length > 0 && (
+        <div style={{textAlign:'center',paddingBottom:8,flexShrink:0}}>
+          <span style={{fontSize:11,color:C.muted}}>← Geç  |  Yukarı/Aşağı Kaydır  |  Kaydet →</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ANA UYGULAMA ──────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser]     = useState(undefined);
@@ -1517,10 +1769,10 @@ export default function App() {
 
   const TABS = [
     {id:'home',   icon:'◉', label:'Genel'},
+    {id:'news',   icon:'📰', label:'Haberler'},
     {id:'budget', icon:'₺', label:'Butce'},
     {id:'invest', icon:'↑', label:'Yatirim'},
     {id:'stats',  icon:'▦', label:'Analiz'},
-    {id:'ai',     icon:'✦', label:'Asistan'},
     {id:'more',   icon:'⋯', label:'Daha'},
   ];
 
@@ -1569,6 +1821,7 @@ export default function App() {
         {/* Ekranlar */}
         <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
           {tab==='home'   && <HomeScreen   data={data} setData={setData} user={user} />}
+          {tab==='news'   && <NewsFeedScreen />}
           {tab==='budget' && <BudgetScreen data={data} setData={setData} />}
           {tab==='invest' && <InvestmentScreen data={data} setData={setData} />}
           {tab==='stats'  && <StatsScreen  data={data} />}
