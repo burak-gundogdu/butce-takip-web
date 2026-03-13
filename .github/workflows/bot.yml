@@ -2,25 +2,25 @@ name: Otomatik Finans Botu
 
 on:
   schedule:
-    - cron: '0 */3 * * *'  # Her 3 saatte bir otomatik çalışır
-  workflow_dispatch:       # GitHub'dan manuel butona basarak da çalıştırabilirsin
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
 
 jobs:
   haberleri-cek:
     runs-on: ubuntu-latest
     steps:
       - name: Kodları Al
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4   # v3 yerine v4 oldu
         
       - name: Python Kur
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # v4 yerine v5 oldu
         with:
           python-version: '3.10'
           
       - name: Gerekli Paketleri Yükle
         run: pip install requests
         
-      - name: Botu Çalıştır!
+      - name: Botu Çalıştır
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_EMAIL: ${{ secrets.FIREBASE_EMAIL }}
