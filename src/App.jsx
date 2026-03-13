@@ -267,6 +267,16 @@ function HomeScreen({ data, setData, user }) {
 
 
   const announcements = useAnnouncements();
+  // Okunan haberleri telefonun hafızasında (localStorage) tutuyoruz ki tekrar çıkmasın
+  const [dismissed, setDismissed] = useState(() => JSON.parse(localStorage.getItem('dismissedNews') || '[]'));
+  
+  const handleDismiss = (id) => {
+    const newDismissed = [...dismissed, id];
+    setDismissed(newDismissed);
+    localStorage.setItem('dismissedNews', JSON.stringify(newDismissed));
+  };
+
+  const visibleAnnouncements = announcements.filter(a => !dismissed.includes(a.id));
   const loadRates = useCallback(async () => {
     setRL(true); setRE(null);
     try {
@@ -282,9 +292,24 @@ function HomeScreen({ data, setData, user }) {
   return (
     <div style={s.scrollArea}>
       {/* Duyurular */}
-      {announcements.length > 0 && (
-        <div style={{marginBottom:4}}>
-          {announcements.map(ann => <AnnouncementCard key={ann.id} ann={ann} />)}
+      {/* 🚀 AKILLI HABER AKIŞI (Yatay Kaydırmalı) */}
+      {visibleAnnouncements.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.muted, marginBottom: 8, paddingLeft: 4, letterSpacing: '1px' }}>
+            PİYASA ÖZETİ (KAYDIR →)
+          </div>
+          <div style={{ 
+            display: 'flex', overflowX: 'auto', gap: 12, paddingBottom: 10,
+            scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none' /* Firefox için gizle */
+          }}>
+            {/* Scrollbar'ı Chrome/Safari için gizleyen minik bir style eklentisi */}
+            <style>{`::-webkit-scrollbar { display: none; }`}</style>
+            
+            {visibleAnnouncements.map(ann => (
+              <SmartNewsCard key={ann.id} ann={ann} onDismiss={handleDismiss} />
+            ))}
+          </div>
         </div>
       )}
       {/* Bakiye */}
@@ -1214,26 +1239,50 @@ function useAnnouncements() {
   return announcements;
 }
 
-// ─── DUYURU KARTI ──────────────────────────────────────────────────────────
-function AnnouncementCard({ ann }) {
-  const tipConfig = {
-    info:       { color: C.blue,   bg: C.blueBg,   icon: 'ℹ️' },
-    uyari:      { color: C.yellow, bg: C.yellowBg,  icon: '⚠️' },
-    guncelleme: { color: C.accent, bg: C.accentBg,  icon: '🆕' },
-    haber:      { color: C.purple, bg: C.purpleBg,  icon: '📰' },
-    sistem:     { color: C.orange, bg: '#1c0a00',   icon: '🔔' },
-  };
-  const cfg = tipConfig[ann.tip] || tipConfig.info;
-  const tarih = ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR') || '';
+// ─── AKILLI HABER / DUYURU KARTI ──────────────────────────────────────────
+function SmartNewsCard({ ann, onDismiss }) {
+  const isNews = ann.tip === 'haber';
+  const badgeColor = ann.etiket?.includes('Pozitif') ? C.green : ann.etiket?.includes('Risk') ? C.red : C.accent;
+  
   return (
-    <div style={{background:cfg.bg, border:`1px solid ${cfg.color}40`, borderRadius:12, padding:12, marginBottom:8}}>
-      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-        <span style={{fontSize:14}}>{cfg.icon}</span>
-        <span style={{fontWeight:700,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
-        <span style={{fontSize:10,color:C.muted}}>{tarih}</span>
+    <div style={{
+      minWidth: '85%', maxWidth: '85%', flexShrink: 0,
+      background: isNews ? '#151C2F' : C.card,
+      border: `1px solid ${isNews ? badgeColor + '50' : C.border}`,
+      borderRadius: 16, padding: 16, position: 'relative',
+      scrollSnapAlign: 'start', display: 'flex', flexDirection: 'column'
+    }}>
+      {/* Üst Kısım: Etiket ve Kapat Butonu */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        {isNews ? (
+          <span style={{ background: badgeColor + '20', color: badgeColor, fontSize: 11, fontWeight: 800, padding: '4px 8px', borderRadius: 8 }}>
+            {ann.etiket || '⚡ AI Analizi'}
+          </span>
+        ) : (
+          <span style={{ background: C.blue + '20', color: C.blue, fontSize: 11, fontWeight: 800, padding: '4px 8px', borderRadius: 8 }}>
+            📢 Duyuru
+          </span>
+        )}
+        <button onClick={() => onDismiss(ann.id)} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>
+          ×
+        </button>
       </div>
-      <div style={{fontSize:12,color:C.dim,lineHeight:'17px'}}>{ann.icerik}</div>
-      {ann.kaynak && <div style={{fontSize:10,color:cfg.color,marginTop:4}}>Kaynak: {ann.kaynak}</div>}
+
+      {/* Başlık ve İçerik */}
+      <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6, lineHeight: '20px' }}>
+        {ann.baslik}
+      </div>
+      <div style={{ fontSize: 13, color: C.dim, marginBottom: 12, lineHeight: '18px' }}>
+        {ann.icerik}
+      </div>
+
+      {/* Yapay Zeka Yorumu (Eğer varsa) */}
+      {ann.analiz && (
+        <div style={{ marginTop: 'auto', background: '#0A0E1A', borderLeft: `3px solid ${badgeColor}`, padding: '10px 12px', borderRadius: '0 8px 8px 0' }}>
+          <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, marginBottom: 4 }}>YAPAY ZEKA NE DİYOR?</div>
+          <div style={{ fontSize: 12, color: C.silver, lineHeight: '16px' }}>{ann.analiz}</div>
+        </div>
+      )}
     </div>
   );
 }
