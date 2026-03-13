@@ -76,18 +76,19 @@ ${newsContext}`;
     });
     const groqData = await groqRes.json();
     if (groqData.error) throw new Error(groqData.error.message);
+    
     const text = groqData.choices?.[0]?.message?.content || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-    
-    let parsed;
-    try {
-      parsed = JSON.parse(clean);
-    } catch (err) {
-      // Eğer yapay zeka JSON dönmeyi unutup düz metin verirse sistemi çökertme,
-      // metni alıp 'bilgi' formatında normal bir asistan mesajıymış gibi göster.
-      parsed = { tur: 'bilgi', mesaj: clean };
-    }
-    
-    res.status(200).json(parsed);
+    const clean = text.replace(/```json|```/g, '').trim();
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch (err) {
+      parsed = { tur: 'bilgi', mesaj: clean };
+    }
+    
+    res.status(200).json(parsed);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 }
