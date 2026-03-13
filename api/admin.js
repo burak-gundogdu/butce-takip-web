@@ -35,21 +35,20 @@ export default async function handler(req, res) {
     }
   } catch { }
 
-  // 2. HABERLERİ YURT DIŞINDAN ÇEK (Yahoo Finance Global RSS - Asla engellemez)
+  // 2. TÜRKİYE HABERLERİNİ "KÖPRÜ" İLE ÇEK (TRT Ekonomi -> rss2json)
   let newsContext = '';
   if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('ekonomi')) {
     try {
-      const rssRes = await fetch('https://finance.yahoo.com/news/rss');
-      const rssText = await rssRes.text();
-      const titles = [...rssText.matchAll(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/g)]
-        .slice(1, 15) // İlk başlığı atla
-        .map(m => m[1].trim())
-        .filter(t => t.length > 10)
-        .join('\n');
+      // Doğrudan TRT'ye gitmek yerine rss2json köprüsünü kullanıyoruz. Siteler bunu engellemez.
+      const rssRes = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://www.trthaber.com/ekonomi_articles.rss');
+      const rssData = await rssRes.json();
       
-      newsContext = titles
-        ? `\nCANLI GLOBAL HABER BASLIKLARI (INGILIZCE):\n${titles}\nGOREVIN: Bu gercek Ingilizce haberlerden birini sec, MUKEMMEL BIR TURKCEYE CEVIR ve oyle duyuru olustur. Asla kafandan haber uydurma.`
-        : '';
+      if (rssData.status === 'ok') {
+        const titles = rssData.items.slice(0, 10).map(item => item.title).join('\n');
+        newsContext = titles
+          ? `\nCANLI TURKIYE EKONOMI HABERLERI:\n${titles}\nGOREVIN: Sadece bu gercek haberlerden birini secerek duyuru olustur. Asla kafandan haber uydurma.`
+          : '';
+      }
     } catch { }
   }
 
@@ -62,7 +61,7 @@ Lutfen SADECE ve SADECE asagidaki JSON formatlarindan birini don. JSON disinda H
 2. Sadece konusmak icin:
 {"tur":"bilgi", "mesaj":"Sohbet cevabin"}
 
-DIKKAT: Sadece { ile baslayip } ile biten veriyi gonder. Kendin uydurma haberler KESINLIKLE YAZMA. 
+DIKKAT: Sadece { ile baslayip } ile biten veriyi gonder. Kendin uydurma haberler KESINLIKLE YAZMA.
 ${finansContext}
 ${newsContext}`;
 
