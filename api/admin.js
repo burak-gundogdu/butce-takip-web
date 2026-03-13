@@ -41,23 +41,17 @@ export default async function handler(req, res) {
     } catch { newsContext = ''; }
   }
 
-  const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin. Turkce konusursun.
-Asagidaki islemleri yapabilirsin:
+  const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin.
+KRITIK KURAL: Yanıtin SADECE gecerli bir JSON objesi olmali. ** kullanma. Markdown kullanma. Kod blogu kullanma.
+Yanıt MUTLAKA { ile baslamali } ile bitmeli. Baska hicbir karakter olmamali.
 
-1. Duyuru olustur:
-{"tur":"duyuru","baslik":"Baslik","icerik":"Detay","tip":"info"|"uyari"|"guncelleme"}
+Formatlar:
+{"tur":"duyuru","baslik":"Baslik","icerik":"Detay","tip":"info","mesaj":"ne yapildi"}
+{"tur":"haber","baslik":"Baslik","icerik":"Ozet","kaynak":"Kaynak adi","mesaj":"ne yapildi"}
+{"tur":"sistem","baslik":"Baslik","icerik":"Mesaj","mesaj":"ne yapildi"}
+{"tur":"bilgi","mesaj":"Cevap"}
 
-2. Haber paylas (RSS'den cekilmis haberlerden birini sec):
-{"tur":"haber","baslik":"Haber basligi","icerik":"Kisa ozet","kaynak":"BBC Turkce"}
-
-3. Sistem mesaji:
-{"tur":"sistem","baslik":"Baslik","icerik":"Mesaj"}
-
-4. Sadece konusmak istiyorsan:
-{"tur":"bilgi","mesaj":"Cevabın buraya"}
-
-Her zaman gecerli JSON don. Markdown veya kod blogu kullanma.
-Duyuru veya haber olusturuldugunda mesaj alanina da ne yaptigini yaz.
+tip: info | uyari | guncelleme
 ${newsContext}`;
 
   try {
@@ -76,9 +70,24 @@ ${newsContext}`;
     });
     const groqData = await groqRes.json();
     if (groqData.error) throw new Error(groqData.error.message);
-    const text = groqData.choices?.[0]?.message?.content || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+    
+    let text = groqData.choices?.[0]?.message?.content || '';
+    
+    // JSON'u metinden cikart — kod blogu, markdown vs temizle
+    text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+    
+    // { ... } bloğunu bul
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) text = jsonMatch[0];
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Parse basarisizsa bilgi olarak don
+      parsed = { tur: 'bilgi', mesaj: groqData.choices?.[0]?.message?.content || 'Yanit alinamadi' };
+    }
+    
     res.status(200).json(parsed);
   } catch (e) {
     res.status(500).json({ error: e.message });
