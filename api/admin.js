@@ -25,40 +25,34 @@ export default async function handler(req, res) {
 
   const { command } = req.body;
 
-  // GOOGLE HABERLER'DEN CANLI VERİ ÇEKME KOMUTU
+  // GOOGLE HABERLER'DEN CANLI VERİ ÇEKME (Tarayıcı kimliği ile Google engelini aşıyoruz)
   let newsContext = '';
   if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('dolar') || command?.toLowerCase().includes('altin')) {
     try {
-      // BBC yerine asla engellenmeyen Google News kullanıyoruz
-      const rssRes = await fetch('https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr');
+      const rssRes = await fetch('https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' }
+      });
       const rssText = await rssRes.text();
       const titles = [...rssText.matchAll(/<title>(.*?)<\/title>/g)]
         .slice(1, 15) // İlk ana başlığı atla, sonraki 14 güncel haberi al
         .map(m => m[1].replace(/&apos;/g, "'").replace(/&quot;/g, '"'))
         .join('\n');
       newsContext = titles
-        ? `\n\nSon dakika güncel haberler (Google Haberler):\n${titles}\n\nEğer kullanıcı finans, ekonomi, dolar veya altın soruyorsa kesinlikle bu haber başlıklarının içindeki güncel bilgileri kullanarak cevap ver.`
+        ? `\n\nCANLI HABER BASLIKLARI (BUNLAR GERCEKTIR, SADECE BUNLARI KULLAN):\n${titles}`
         : '';
     } catch { newsContext = ''; }
   }
 
-  const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin. Turkce konusursun.
-Asagidaki islemleri yapabilirsin:
+  const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin.
+Lutfen SADECE ve SADECE asagidaki JSON formatlarindan birini don. JSON disinda (basinda veya sonunda) HICBIR metin, aciklama veya not yazma! Eger bana bir sey soylemek istersen bunu "mesaj" anahtarinin icine yaz.
 
-1. Duyuru olustur (Kullanicilarin ana ekranina aninda duser):
-{"tur":"duyuru","baslik":"Baslik","icerik":"Detay","tip":"info"|"uyari"|"guncelleme"}
+1. Duyuru olusturmak icin:
+{"tur":"duyuru", "baslik":"Gercek Haber Basligi", "icerik":"Detaylar", "tip":"info", "mesaj":"Duyuru eklendi"}
 
-2. Haber paylas (RSS'den cekilmis haberlerden secilir, ana ekrana duser):
-{"tur":"haber","baslik":"Güncel Haber Basligi","icerik":"Kisa ozet","kaynak":"Google Haberler"}
+2. Sadece konusmak icin:
+{"tur":"bilgi", "mesaj":"Sohbet cevabin"}
 
-3. Sistem mesaji:
-{"tur":"sistem","baslik":"Baslik","icerik":"Mesaj"}
-
-4. Sadece konusmak istiyorsan:
-{"tur":"bilgi","mesaj":"Cevabın buraya"}
-
-Her zaman gecerli JSON don. Markdown veya kod blogu kullanma.
-Duyuru veya haber olusturuldugunda mesaj alanina da ne yaptigini yaz.
+DIKKAT: Sadece { ile baslayip } ile biten veriyi gonder. Kendin uydurma haberler (Orn: Dolar 1000 TL, Savas cikti vb.) KESINLIKLE YAZMA. Sadece eger varsa CANLI HABER BASLIKLARI kismindaki gercek verileri kullan.
 ${newsContext}`;
 
   try {
@@ -68,7 +62,7 @@ ${newsContext}`;
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         max_tokens: 800,
-        temperature: 0.2,
+        temperature: 0.1, // Halüsinasyon görmemesi için yaratıcılığını en aza indirdik
         messages: [
           { role: 'system', content: ADMIN_SYSTEM },
           { role: 'user', content: command },
@@ -78,14 +72,19 @@ ${newsContext}`;
     const groqData = await groqRes.json();
     if (groqData.error) throw new Error(groqData.error.message);
     
-    const text = groqData.choices?.[0]?.message?.content || '';
-    const clean = text.replace(/```json|```/g, '').trim();
+    let text = groqData.choices?.[0]?.message?.content || '';
     
+    // Yapisal Güvenlik Ağı: Yapay zeka inat edip dışarıya yazı yazarsa, kodu çökertmemek için sadece { ... } kısmını cımbızla çekip alıyoruz.
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      text = jsonMatch[0];
+    }
+
     let parsed;
     try {
-      parsed = JSON.parse(clean);
+      parsed = JSON.parse(text);
     } catch (err) {
-      parsed = { tur: 'bilgi', mesaj: clean };
+      parsed = { tur: 'bilgi', mesaj: text };
     }
     
     res.status(200).json(parsed);
