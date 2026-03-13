@@ -25,17 +25,17 @@ export default async function handler(req, res) {
 
   const { command } = req.body;
 
-  // GOOGLE HABERLER'DEN CANLI VERİ ÇEKME (Tarayıcı kimliği ile Google engelini aşıyoruz)
+  // NTV EKONOMI'DEN CANLI VERI CEKME (Google engelliyor, NTV engellemez)
   let newsContext = '';
   if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('dolar') || command?.toLowerCase().includes('altin')) {
     try {
-      const rssRes = await fetch('https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr', {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' }
-      });
-      const rssText = await rssRes.text();
+      const rssRes = await fetch('https://www.ntv.com.tr/ekonomi.rss');
+      let rssText = await rssRes.text();
+      // XML içindeki karmaşık yapıları temizle
+      rssText = rssText.replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '');
       const titles = [...rssText.matchAll(/<title>(.*?)<\/title>/g)]
         .slice(1, 15) // İlk ana başlığı atla, sonraki 14 güncel haberi al
-        .map(m => m[1].replace(/&apos;/g, "'").replace(/&quot;/g, '"'))
+        .map(m => m[1])
         .join('\n');
       newsContext = titles
         ? `\n\nCANLI HABER BASLIKLARI (BUNLAR GERCEKTIR, SADECE BUNLARI KULLAN):\n${titles}`
@@ -62,7 +62,7 @@ ${newsContext}`;
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         max_tokens: 800,
-        temperature: 0.1, // Halüsinasyon görmemesi için yaratıcılığını en aza indirdik
+        temperature: 0.1, 
         messages: [
           { role: 'system', content: ADMIN_SYSTEM },
           { role: 'user', content: command },
@@ -74,7 +74,6 @@ ${newsContext}`;
     
     let text = groqData.choices?.[0]?.message?.content || '';
     
-    // Yapisal Güvenlik Ağı: Yapay zeka inat edip dışarıya yazı yazarsa, kodu çökertmemek için sadece { ... } kısmını cımbızla çekip alıyoruz.
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       text = jsonMatch[0];
