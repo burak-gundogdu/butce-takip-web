@@ -5,7 +5,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Sadece admin token kabul et
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Yetkisiz' });
   const idToken = authHeader.split('Bearer ')[1];
@@ -25,26 +24,37 @@ export default async function handler(req, res) {
 
   const { command } = req.body;
 
-  // NTV EKONOMI'DEN CANLI VERI CEKME (Google engelliyor, NTV engellemez)
+  // 1. CANLI DOLAR KURUNU YAHOO'DAN ÇEK
+  let finansContext = '';
+  try {
+    const yfRes = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/USDTRY=X');
+    const yfData = await yfRes.json();
+    const price = yfData.chart.result[0].meta.regularMarketPrice;
+    if (price) {
+      finansContext = `SU ANKI GERCEK DOLAR KURU: 1 USD = ${price.toFixed(2)} TL. (Dolar sorulursa KESINLIKLE bu gercek rakami kullan)`;
+    }
+  } catch { }
+
+  // 2. HABERLERİ YURT DIŞINDAN ÇEK (Yahoo Finance Global RSS - Asla engellemez)
   let newsContext = '';
-  if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('dolar') || command?.toLowerCase().includes('altin')) {
+  if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('ekonomi')) {
     try {
-      const rssRes = await fetch('https://www.ntv.com.tr/ekonomi.rss');
-      let rssText = await rssRes.text();
-      // XML içindeki karmaşık yapıları temizle
-      rssText = rssText.replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '');
-      const titles = [...rssText.matchAll(/<title>(.*?)<\/title>/g)]
-        .slice(1, 15) // İlk ana başlığı atla, sonraki 14 güncel haberi al
-        .map(m => m[1])
+      const rssRes = await fetch('https://finance.yahoo.com/news/rss');
+      const rssText = await rssRes.text();
+      const titles = [...rssText.matchAll(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/g)]
+        .slice(1, 15) // İlk başlığı atla
+        .map(m => m[1].trim())
+        .filter(t => t.length > 10)
         .join('\n');
+      
       newsContext = titles
-        ? `\n\nCANLI HABER BASLIKLARI (BUNLAR GERCEKTIR, SADECE BUNLARI KULLAN):\n${titles}`
+        ? `\nCANLI GLOBAL HABER BASLIKLARI (INGILIZCE):\n${titles}\nGOREVIN: Bu gercek Ingilizce haberlerden birini sec, MUKEMMEL BIR TURKCEYE CEVIR ve oyle duyuru olustur. Asla kafandan haber uydurma.`
         : '';
-    } catch { newsContext = ''; }
+    } catch { }
   }
 
   const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin.
-Lutfen SADECE ve SADECE asagidaki JSON formatlarindan birini don. JSON disinda (basinda veya sonunda) HICBIR metin, aciklama veya not yazma! Eger bana bir sey soylemek istersen bunu "mesaj" anahtarinin icine yaz.
+Lutfen SADECE ve SADECE asagidaki JSON formatlarindan birini don. JSON disinda HICBIR metin yazma! Eger bana bir sey soylemek istersen bunu "mesaj" icine yaz.
 
 1. Duyuru olusturmak icin:
 {"tur":"duyuru", "baslik":"Gercek Haber Basligi", "icerik":"Detaylar", "tip":"info", "mesaj":"Duyuru eklendi"}
@@ -52,7 +62,8 @@ Lutfen SADECE ve SADECE asagidaki JSON formatlarindan birini don. JSON disinda (
 2. Sadece konusmak icin:
 {"tur":"bilgi", "mesaj":"Sohbet cevabin"}
 
-DIKKAT: Sadece { ile baslayip } ile biten veriyi gonder. Kendin uydurma haberler (Orn: Dolar 1000 TL, Savas cikti vb.) KESINLIKLE YAZMA. Sadece eger varsa CANLI HABER BASLIKLARI kismindaki gercek verileri kullan.
+DIKKAT: Sadece { ile baslayip } ile biten veriyi gonder. Kendin uydurma haberler KESINLIKLE YAZMA. 
+${finansContext}
 ${newsContext}`;
 
   try {
