@@ -25,18 +25,19 @@ export default async function handler(req, res) {
 
   const { command } = req.body;
 
-  // Haber cekme komutu
+  // GOOGLE HABERLER'DEN CANLI VERİ ÇEKME KOMUTU
   let newsContext = '';
-  if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem')) {
+  if (command?.toLowerCase().includes('haber') || command?.toLowerCase().includes('gundem') || command?.toLowerCase().includes('dolar') || command?.toLowerCase().includes('altin')) {
     try {
-      const rssRes = await fetch('https://feeds.bbcturkce.com/bbcturkce/rss.xml', {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
+      // BBC yerine asla engellenmeyen Google News kullanıyoruz
+      const rssRes = await fetch('https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr');
       const rssText = await rssRes.text();
-      const titles = [...rssText.matchAll(/<title><!\[CDATA\[(.+?)\]\]><\/title>/g)]
-        .slice(0, 8).map(m => m[1]).join('\n');
+      const titles = [...rssText.matchAll(/<title>(.*?)<\/title>/g)]
+        .slice(1, 15) // İlk ana başlığı atla, sonraki 14 güncel haberi al
+        .map(m => m[1].replace(/&apos;/g, "'").replace(/&quot;/g, '"'))
+        .join('\n');
       newsContext = titles
-        ? `\n\nSon dakika haberler (BBC Turkce):\n${titles}`
+        ? `\n\nSon dakika güncel haberler (Google Haberler):\n${titles}\n\nEğer kullanıcı finans, ekonomi, dolar veya altın soruyorsa kesinlikle bu haber başlıklarının içindeki güncel bilgileri kullanarak cevap ver.`
         : '';
     } catch { newsContext = ''; }
   }
@@ -44,11 +45,11 @@ export default async function handler(req, res) {
   const ADMIN_SYSTEM = `Sen bir finansal uygulama yonetici asistanisin. Turkce konusursun.
 Asagidaki islemleri yapabilirsin:
 
-1. Duyuru olustur:
+1. Duyuru olustur (Kullanicilarin ana ekranina aninda duser):
 {"tur":"duyuru","baslik":"Baslik","icerik":"Detay","tip":"info"|"uyari"|"guncelleme"}
 
-2. Haber paylas (RSS'den cekilmis haberlerden birini sec):
-{"tur":"haber","baslik":"Haber basligi","icerik":"Kisa ozet","kaynak":"BBC Turkce"}
+2. Haber paylas (RSS'den cekilmis haberlerden secilir, ana ekrana duser):
+{"tur":"haber","baslik":"Güncel Haber Basligi","icerik":"Kisa ozet","kaynak":"Google Haberler"}
 
 3. Sistem mesaji:
 {"tur":"sistem","baslik":"Baslik","icerik":"Mesaj"}
