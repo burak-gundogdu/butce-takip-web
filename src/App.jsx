@@ -281,10 +281,10 @@ function HomeScreen({ data, setData, user }) {
 
   return (
     <div style={s.scrollArea}>
-      {/* Duyurular */}
-      {announcements.length > 0 && (
+      {/* Sadece admin duyurulari (haber degil) */}
+      {announcements.filter(a => a.tip !== 'haber').length > 0 && (
         <div style={{marginBottom:4}}>
-          {announcements.map(ann => <AnnouncementCard key={ann.id} ann={ann} />)}
+          {announcements.filter(a => a.tip !== 'haber').map(ann => <AnnouncementCard key={ann.id} ann={ann} />)}
         </div>
       )}
       {/* Bakiye */}
@@ -1434,7 +1434,7 @@ function NewsFeedScreen() {
 
   // Firestore'dan haberleri çek
   useEffect(() => {
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(30));
+    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(50));
     const unsub = onSnapshot(q, snap => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setCards(docs);
@@ -1457,12 +1457,12 @@ function NewsFeedScreen() {
   const goNext = (dir) => {
     if (idx >= cards.length - 1) return;
     setSwipe(dir || 'up');
-    setTimeout(() => { setIdx(i => i + 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); }, 280);
+    setTimeout(() => { setIdx(i => i + 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); dragRef.current = {x:0,y:0}; }, 280);
   };
   const goPrev = () => {
     if (idx === 0) return;
     setSwipe('down');
-    setTimeout(() => { setIdx(i => i - 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); }, 280);
+    setTimeout(() => { setIdx(i => i - 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); dragRef.current = {x:0,y:0}; }, 280);
   };
   const saveCard = () => {
     if (current && !saved.find(s => s.id === current.id)) setSaved(s => [...s, current]);
@@ -1470,30 +1470,36 @@ function NewsFeedScreen() {
   };
   const skipCard = () => goNext('left');
 
-  // Touch handlers
+  // Touch handlers — dragRef ile closure sorununu coz
+  const dragRef = useRef({ x: 0, y: 0 });
+
   const onTouchStart = (e) => {
     const t = e.touches[0];
     startRef.current = { x: t.clientX, y: t.clientY };
+    dragRef.current = { x: 0, y: 0 };
     setDrag({ x: 0, y: 0, dragging: true });
   };
   const onTouchMove = (e) => {
     if (!startRef.current) return;
+    e.preventDefault();
     const t = e.touches[0];
     const dx = t.clientX - startRef.current.x;
     const dy = t.clientY - startRef.current.y;
+    dragRef.current = { x: dx, y: dy };
     setDrag({ x: dx, y: dy, dragging: true });
   };
   const onTouchEnd = () => {
-    const { x, y } = drag;
-    const threshold = 60;
+    // dragRef kullan, eski state'i okuma
+    const { x, y } = dragRef.current;
+    const threshold = 55;
     if (Math.abs(x) > Math.abs(y)) {
       if (x > threshold) saveCard();
       else if (x < -threshold) skipCard();
-      else setDrag({ x:0, y:0, dragging:false });
+      else { setDrag({ x:0, y:0, dragging:false }); dragRef.current={x:0,y:0}; }
     } else {
       if (y < -threshold) goNext('up');
       else if (y > threshold) goPrev();
-      else setDrag({ x:0, y:0, dragging:false });
+      else { setDrag({ x:0, y:0, dragging:false }); dragRef.current={x:0,y:0}; }
     }
     startRef.current = null;
   };
@@ -1621,7 +1627,7 @@ function NewsFeedScreen() {
       </div>
 
       {/* Kart alanı */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'8px 16px',position:'relative',overflow:'hidden'}}
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'8px 16px',position:'relative',overflow:'hidden', touchAction:'none'}}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
         {/* Swipe hint overlay */}
@@ -1773,6 +1779,7 @@ export default function App() {
     {id:'budget', icon:'₺', label:'Butce'},
     {id:'invest', icon:'↑', label:'Yatirim'},
     {id:'stats',  icon:'▦', label:'Analiz'},
+    {id:'ai',     icon:'✦', label:'Asistan'},
     {id:'more',   icon:'⋯', label:'Daha'},
   ];
 
