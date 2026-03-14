@@ -1,4 +1,4 @@
-import os, requests, json, time, re, hashlib, xml.etree.ElementTree as ET
+import os, requests, json, time, re, hashlib
 from datetime import datetime, timezone
 
 FIREBASE_API_KEY    = os.environ.get("FIREBASE_API_KEY")
@@ -7,12 +7,22 @@ FIREBASE_EMAIL      = os.environ.get("FIREBASE_EMAIL")
 FIREBASE_PASSWORD   = os.environ.get("FIREBASE_PASSWORD")
 GROQ_API_KEY        = os.environ.get("GROQ_API_KEY")
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-    "Cache-Control": "no-cache",
-}
+# Farkli User-Agent'lar donusumlu kullan
+UA_LIST = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)",
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+]
+
+def get_headers(i=0):
+    return {
+        "User-Agent": UA_LIST[i % len(UA_LIST)],
+        "Accept": "application/rss+xml, application/xml, text/xml, application/atom+xml, */*",
+        "Accept-Language": "tr-TR,tr;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
 
 def title_hash(title):
     clean = re.sub(r'\s+', ' ', title.lower().strip())[:80]
@@ -25,138 +35,120 @@ def get_firebase_token():
         raise Exception(f"Firebase giris basarisiz: {res}")
     return res["idToken"]
 
-# ─── RSS2JSON ile cok sayida kaynak ────────────────────────────────────────
-def fetch_rss2json(name, rss_url, count=10):
-    """rss2json - URL de donduruyor, engellenmiyor"""
+def parse_rss_regex(xml_text, source_name, limit=10):
+    """XML parse yerine regex - bozuk XML'i de okur"""
     items = []
+    
+    # Tum <item> bloklarini bul
+    item_blocks = re.findall(r'<item[^>]*>(.*?)</item>', xml_text, re.DOTALL)
+    if not item_blocks:
+        # Atom feed icin <entry> dene
+        item_blocks = re.findall(r'<entry[^>]*>(.*?)</entry>', xml_text, re.DOTALL)
+    
+    for block in item_blocks[:limit]:
+        # Baslik
+        title_match = re.search(r'<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', block, re.DOTALL)
+        if not title_match:
+            continue
+        title = title_match.group(1).strip()
+        title = re.sub(r'<[^>]+>', '', title).strip()  # HTML temizle
+        if not title or len(title) < 5:
+            continue
+        
+        # URL
+        link_match = (
+            re.search(r'<link[^>]*>(?:<!\[CDATA\[)?(https?://[^\s<]+)(?:\]\]>)?</link>', block) or
+            re.search(r'<link[^>]*href=["\']([^"\']+)["\']', block) or
+            re.search(r'<guid[^>]*>(https?://[^\s<]+)</guid>', block)
+        )
+        url = link_match.group(1).strip() if link_match else ""
+        
+        # Aciklama
+        desc_match = re.search(r'<description[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>', block, re.DOTALL)
+        desc = ""
+        if desc_match:
+            desc = re.sub(r'<[^>]+>', '', desc_match.group(1)).strip()[:200]
+        
+        items.append({
+            "source": source_name,
+            "title": title,
+            "url": url,
+            "description": desc,
+            "hash": title_hash(title)
+        })
+    
+    return items
+
+def fetch_rss_direct(name, url, ua_index=0, limit=10):
+    """Direkt HTTP ile RSS cek, regex ile parse et"""
     try:
-        url = f"https://api.rss2json.com/v1/api.json?rss_url={requests.utils.quote(rss_url)}&count={count}&api_key=&order_by=pubDate"
-        res = requests.get(url, timeout=12).json()
-        if res.get("status") == "ok":
-            for art in res.get("items", []):
-                title = art.get("title","").strip()
-                link  = art.get("link","").strip()
-                desc  = art.get("description","").strip()
-                # HTML temizle
-                desc = re.sub(r'<[^>]+>', '', desc)[:300]
-                if title and len(title) > 10:
-                    items.append({
-                        "source": name,
-                        "title": title,
-                        "url": link,
-                        "description": desc,
-                        "hash": title_hash(title)
-                    })
+        res = requests.get(url, headers=get_headers(ua_index), timeout=15, allow_redirects=True)
+        if res.status_code != 200:
+            print(f"  [{name}] HTTP {res.status_code}")
+            return []
+        items = parse_rss_regex(res.text, name, limit)
+        return items
     except Exception as e:
-        print(f"  [{name}] rss2json hatasi: {e}")
-    return items
+        print(f"  [{name}] Hata: {type(e).__name__}: {str(e)[:60]}")
+        return []
 
-# ─── KAP - Direkt XML ──────────────────────────────────────────────────────
-def fetch_kap():
-    """KAP bildirimleri - cok onemli, direkt XML"""
-    items = []
-    urls_to_try = [
-        "https://www.kap.org.tr/tr/bildirim-sorgu/ozet/0/rss",
-        "https://www.kap.org.tr/en/notification-query/summary/0/rss",
-    ]
-    for url in urls_to_try:
-        try:
-            res = requests.get(url, headers=HEADERS, timeout=12)
-            root = ET.fromstring(res.content)
-            elems = root.findall('.//item')
-            for el in elems[:15]:
-                t = el.find('title')
-                l = el.find('link')
-                d = el.find('description')
-                if t is not None and t.text:
-                    title = re.sub(r'<!\[CDATA\[(.+?)\]\]>', r'\1', t.text).strip()
-                    link  = l.text.strip() if l is not None and l.text else ""
-                    desc  = re.sub(r'<[^>]+>', '', re.sub(r'<!\[CDATA\[(.+?)\]\]>', r'\1', d.text or "")).strip()[:200] if d is not None else ""
-                    if len(title) > 5:
-                        items.append({"source":"KAP","title":f"[KAP] {title}","url":link,"description":desc,"hash":title_hash(title)})
-            if items:
-                print(f"  [KAP] {len(items)} bildirim")
-                return items
-        except Exception as e:
-            print(f"  [KAP] {url} hatasi: {e}")
-    return items
-
-# ─── Tum kaynaklar ────────────────────────────────────────────────────────
 def fetch_all_news():
     all_items = []
     seen = set()
 
-    # RSS2JSON kaynaklari - her birinden 10 haber al
-    rss_sources = [
-        ("NTV Ekonomi",       "https://www.ntv.com.tr/ekonomi.rss"),
-        ("TRT Haber Ekonomi", "https://www.trthaber.com/ekonomi_articles.rss"),
-        ("Sabah Ekonomi",     "https://www.sabah.com.tr/rss/ekonomi.xml"),
-        ("Haberturk Ekonomi", "https://www.haberturk.com/rss/kategori/ekonomi.xml"),
-        ("Hurriyet Ekonomi",  "https://www.hurriyet.com.tr/rss/ekonomi"),
-        ("Dunya Gazetesi",    "https://www.dunya.com/rss/anasayfa.xml"),
-        ("Bloomberg HT",      "https://www.bloomberght.com/rss"),
-        ("Para Analiz",       "https://www.paraanaliz.com/feed/"),
-        ("Milliyet Ekonomi",  "https://www.milliyet.com.tr/rss/rssNew/ekonomiRss.xml"),
-        ("Cumhuriyet Ekono",  "https://www.cumhuriyet.com.tr/rss/ekonomi.xml"),
-        ("Investing TR",      "https://tr.investing.com/rss/news.rss"),
-        ("Borsagundem",       "https://www.borsagundem.com/feed"),
-        ("Ekonomist",         "https://ekonomist.com.tr/feed/"),
+    sources = [
+        # (isim, url, ua_index)
+        ("NTV Ekonomi",       "https://www.ntv.com.tr/ekonomi.rss",                        0),
+        ("TRT Ekonomi",       "https://www.trthaber.com/ekonomi_articles.rss",              1),
+        ("Sabah Ekonomi",     "https://www.sabah.com.tr/rss/ekonomi.xml",                   2),
+        ("Haberturk",         "https://www.haberturk.com/rss/kategori/ekonomi.xml",         3),
+        ("Hurriyet Ekonomi",  "https://www.hurriyet.com.tr/rss/ekonomi",                    0),
+        ("Milliyet Ekonomi",  "https://www.milliyet.com.tr/rss/rssNew/ekonomiRss.xml",      1),
+        ("Dunya Gazetesi",    "https://www.dunya.com/rss/anasayfa.xml",                     2),
+        ("Bloomberg HT",      "https://www.bloomberght.com/rss",                            3),
+        ("Para Analiz",       "https://www.paraanaliz.com/feed/",                           0),
+        ("Borsagundem",       "https://www.borsagundem.com/feed",                           1),
+        ("Ekonomist",         "https://ekonomist.com.tr/feed/",                             2),
+        ("Yatirim Finans",    "https://www.yatirimfinans.com/feed/",                        3),
+        ("KAP Bildirimler",   "https://www.kap.org.tr/tr/bildirim-sorgu/ozet/0/rss",        0),
     ]
 
-    for name, url in rss_sources:
-        items = fetch_rss2json(name, url, count=8)
-        new = 0
+    for name, url, ua_idx in sources:
+        items = fetch_rss_direct(name, url, ua_idx, limit=8)
+        new_count = 0
         for item in items:
             if item["hash"] not in seen:
                 seen.add(item["hash"])
                 all_items.append(item)
-                new += 1
-        print(f"  [{name}] {new} yeni haber")
-        time.sleep(0.25)
-
-    # KAP haberleri - her zaman ekle
-    kap_items = fetch_kap()
-    for item in kap_items:
-        if item["hash"] not in seen:
-            seen.add(item["hash"])
-            all_items.append(item)
+                new_count += 1
+        print(f"  [{name}] {new_count} haber")
+        time.sleep(0.5)
 
     print(f"\n  TOPLAM BENZERSIZ: {len(all_items)} haber")
     return all_items
 
-# ─── AI Analiz ─────────────────────────────────────────────────────────────
 def analyze_with_ai(news_items):
     if not news_items:
         return []
 
-    # Her haber icin baslik + aciklama gonder
-    news_text = ""
+    lines = []
     for i in news_items:
-        desc = f" — {i['description'][:100]}" if i.get('description') else ""
-        news_text += f"[{i['source']}] {i['title']}{desc} |||URL:{i.get('url','')}||| ###HASH:{i['hash']}###\n"
+        desc = f" | {i['description'][:80]}" if i.get('description') else ""
+        lines.append(f"[{i['source']}] {i['title']}{desc} |URL={i.get('url','')}| HASH={i['hash']}")
+    news_text = "\n".join(lines)
 
     count = min(12, len(news_items))
 
-    system_prompt = f"""Sen uzman bir Turk finans ve borsa analistisin.
-Asagidaki haberlerden en onemli ve BIRBIRINDEN FARKLI {count} tanesini sec.
-KAP bildirimleri varsa mutlaka dahil et - cok onemli!
-Ayni konuyu tekrarlama. Cesit: doviz, borsa, enflasyon, sirket, MB, dis piyasa, emtia.
+    prompt = f"""Sen uzman bir Turk finans analistisin.
+Asagidaki {len(news_items)} haberden EN ONEMLI ve BIRBIRINDEN FARKLI {count} tanesini sec.
+KAP bildirimleri varsa mutlaka dahil et.
 
-SADECE JSON dizisi don. Markdown veya ** KULLANMA. [ ile basla ] ile bit:
+SADECE JSON dizisi don - [ ile basla ] ile bit, baska hicbir sey yazma:
 
-[{{
-  "baslik": "Etkileyici ve bilgilendirici baslik (max 65 karakter)",
-  "icerik": "Haberin detayli 3 cumlelik ozeti. Ne oldu, ne zaman, kimler etkilenir.",
-  "analiz": "Yatirimci, tasarruf sahibi ve tuketici icin somut anlami nedir? 2 cumle.",
-  "etiket": "🟢 Pozitif",
-  "tip": "haber",
-  "kaynak": "kaynak adi",
-  "url": "|||URL:... icindeki url aynen koy|||",
-  "titleHash": "###HASH:... icindeki deger aynen koy###"
-}}]
+[{{"baslik":"Max 65 karakter etkileyici baslik","icerik":"3 cumlelik detayli ozet. Ne oldu, kimler etkilenir, ne zaman.","analiz":"Yatirimci ve tuketici icin somut 2 cumlelik analiz.","etiket":"🟢 Pozitif","tip":"haber","kaynak":"kaynak ismi","url":"URL= den sonraki linki aynen kop","titleHash":"HASH= den sonraki degeri aynen kop"}}]
 
 etiket: 🟢 Pozitif | 🔴 Riskli | ⚪ Notr | 📊 Piyasa | 💰 Ekonomi | 🏦 MB | 💵 Doviz | 📈 Yukselis | 📉 Dusus | 🏢 Sirket | 📋 KAP
-KESINLIKLE {count} eleman don."""
+Tam {count} eleman don, eksik olmasin."""
 
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     try:
@@ -164,38 +156,41 @@ KESINLIKLE {count} eleman don."""
             headers=headers, timeout=60, json={
                 "model": "llama-3.3-70b-versatile",
                 "messages": [
-                    {"role":"system","content":system_prompt},
+                    {"role":"system","content":prompt},
                     {"role":"user","content":f"HABERLER:\n{news_text[:9000]}"}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 6000,
             }).json()
 
-        content = res["choices"][0]["message"]["content"]
-        content = re.sub(r'\*\*(.+?)\*\*', r'\1', content)
-        content = re.sub(r'```[a-z]*\n?', '', content)
-        content = re.sub(r'```', '', content).strip()
+        raw = res["choices"][0]["message"]["content"]
+        # Temizle
+        clean = re.sub(r'```[a-z]*\n?', '', raw)
+        clean = re.sub(r'```', '', clean)
+        clean = re.sub(r'\*\*(.+?)\*\*', r'\1', clean).strip()
 
-        match = re.search(r'\[[\s\S]*\]', content)
+        match = re.search(r'\[[\s\S]*?\](?=\s*$)', clean)
+        if not match:
+            match = re.search(r'\[[\s\S]*\]', clean)
+        
         if match:
             result = json.loads(match.group(0))
             # URL ve hash temizle
             for item in result:
-                url = item.get("url","")
-                item["url"] = re.sub(r'\|\|\|URL:|URL:|\|\|\|', '', url).strip()
+                u = item.get("url","")
+                item["url"] = re.sub(r'URL=\s*', '', u).strip().strip('|').strip()
                 h = item.get("titleHash","")
-                item["titleHash"] = re.sub(r'###HASH:|###', '', h).strip()
+                item["titleHash"] = re.sub(r'HASH=\s*', '', h).strip()
             print(f"  AI {len(result)} haber secti")
             return result
 
-        print("  JSON bulunamadi:")
-        print(content[:300])
+        print("  JSON bulunamadi. Ham yanit:")
+        print(clean[:400])
         return []
     except Exception as e:
         print(f"  AI hatasi: {e}")
         return []
 
-# ─── Firestore ─────────────────────────────────────────────────────────────
 def get_existing_hashes(token):
     url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements?pageSize=150"
     try:
@@ -210,17 +205,17 @@ def delete_old_news(token):
     headers = {"Authorization": f"Bearer {token}"}
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
-        cutoff = time.time() - 86400  # 24 saat
+        cutoff = time.time() - 86400
         deleted = 0
         for doc in res.get("documents", []):
             fields = doc.get("fields", {})
             if fields.get("tip",{}).get("stringValue","") != "haber":
                 continue
-            created_str = fields.get("createdAt",{}).get("timestampValue","")
-            if not created_str:
+            ts_str = fields.get("createdAt",{}).get("timestampValue","")
+            if not ts_str:
                 continue
             try:
-                ts = time.mktime(time.strptime(created_str[:19], '%Y-%m-%dT%H:%M:%S'))
+                ts = time.mktime(time.strptime(ts_str[:19], '%Y-%m-%dT%H:%M:%S'))
                 if ts < cutoff:
                     requests.delete(f"https://firestore.googleapis.com/v1/{doc['name']}", headers=headers, timeout=5)
                     deleted += 1
@@ -259,10 +254,10 @@ def main():
     token = get_firebase_token()
     print("    OK")
 
-    print("\n[2] Eski haberler temizleniyor (24h+)...")
+    print("\n[2] Eski haberler temizleniyor...")
     delete_old_news(token)
 
-    print("\n[3] Haberler cekiliyor...")
+    print("\n[3] RSS kaynaklari cekiliyor...")
     news_items = fetch_all_news()
 
     if not news_items:
@@ -276,7 +271,7 @@ def main():
     print(f"    Yeni: {len(new_items)} haber AI'a gidecek")
 
     if not new_items:
-        print("    Tum haberler zaten mevcut, cikiliyor.")
+        print("    Tum haberler zaten mevcut.")
         return
 
     print("\n[5] AI analiz...")
@@ -285,7 +280,7 @@ def main():
         print("HATA: AI bos dondu!")
         return
 
-    print("\n[6] Kaydediliyor...")
+    print("\n[6] Firestore'a kaydediliyor...")
     saved = 0
     for item in ai_list:
         h = item.get("titleHash","")
