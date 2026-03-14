@@ -1603,7 +1603,9 @@ function NewsFeedScreen() {
             : saved.map((ann,i)=>{
                 const cfg=tipCfg[ann.tip]||tipCfg.haber;
                 return (
-                  <div key={i} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:14,padding:16,marginBottom:10}}>
+                  <div key={i} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:14,marginBottom:10,overflow:'hidden'}}>
+                    {ann.image&&<img src={ann.image} alt={ann.baslik} style={{width:'100%',height:120,objectFit:'cover'}} onError={e=>{e.target.style.display='none';}}/>}
+                    <div style={{padding:14}}>
                     <div style={{display:'flex',gap:8,marginBottom:8}}>
                       <span style={{fontSize:16}}>{cfg.icon}</span>
                       <span style={{fontWeight:800,fontSize:13,color:cfg.color,flex:1,lineHeight:'18px'}}>{ann.baslik}</span>
@@ -1619,6 +1621,7 @@ function NewsFeedScreen() {
                         style={{fontSize:11,color:C.muted,background:'none',border:`1px solid ${C.border}`,borderRadius:20,padding:'4px 12px',cursor:'pointer'}}>
                         Kaldir
                       </button>
+                    </div>
                     </div>
                   </div>
                 );
@@ -1722,45 +1725,59 @@ function NewsFeedScreen() {
 
         {/* Ana kart */}
         <div style={{position:'relative',zIndex:1,background:cfg.bg,
-          border:`1px solid ${cfg.color}50`,borderRadius:24,padding:22,
-          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',...cardStyle}}>
+          border:`1px solid ${cfg.color}50`,borderRadius:24,
+          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',overflow:'hidden',...cardStyle}}>
 
-          {/* Kaynak + saat */}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-            <span style={{fontSize:11,background:`${cfg.color}20`,borderRadius:20,padding:'3px 10px',color:cfg.color,fontWeight:700}}>
-              {current?.kaynak||'Haber'}
-            </span>
-            <span style={{fontSize:10,color:C.muted}}>
-              {current?.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}
-            </span>
-          </div>
-
-          {/* Baslik */}
-          <div style={{fontSize:19,fontWeight:900,color:C.text,lineHeight:'25px',marginBottom:12}}>
-            {current?.baslik}
-          </div>
-
-          {/* Icerik */}
-          <div style={{fontSize:13,color:C.dim,lineHeight:'21px',marginBottom:14}}>
-            {current?.icerik}
-          </div>
-
-          {/* AI analizi */}
-          {current?.analiz&&(
-            <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:14,padding:12,marginBottom:14}}>
-              <div style={{fontSize:10,color:cfg.color,fontWeight:700,letterSpacing:'1px',marginBottom:4}}>💡 AI ANALİZİ</div>
-              <div style={{fontSize:12,color:cfg.color,lineHeight:'18px'}}>{current.analiz}</div>
+          {/* Haber gorseli */}
+          {current?.image && (
+            <div style={{width:'100%',height:160,overflow:'hidden',position:'relative',borderRadius:'24px 24px 0 0'}}>
+              <img src={current.image} alt={current.baslik}
+                style={{width:'100%',height:'100%',objectFit:'cover'}}
+                onError={e=>{e.target.style.display='none'; e.target.parentElement.style.display='none';}}/>
+              <div style={{position:'absolute',inset:0,background:`linear-gradient(to bottom, transparent 40%, ${cfg.bg} 100%)`}}/>
             </div>
           )}
 
-          {/* Kaynak linki */}
-          {current?.url&&(
-            <a href={current.url} target="_blank" rel="noreferrer"
-              style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
-                background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',fontWeight:700}}>
-              🔗 Haberin Tamamini Oku
-            </a>
-          )}
+          <div style={{padding:18}}>
+            {/* Kaynak + saat */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <span style={{fontSize:11,background:`${cfg.color}25`,borderRadius:20,padding:'3px 10px',color:cfg.color,fontWeight:700}}>
+                {current?.kaynak||'Haber'}
+              </span>
+              <span style={{fontSize:11,color:C.muted,display:'flex',alignItems:'center',gap:4}}>
+                🕐 {current?.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}
+                {' '}
+                {current?.createdAt?.toDate?.()?.toLocaleDateString('tr-TR',{day:'numeric',month:'short'})||''}
+              </span>
+            </div>
+
+            {/* Baslik */}
+            <div style={{fontSize:18,fontWeight:900,color:C.text,lineHeight:'24px',marginBottom:10}}>
+              {current?.baslik}
+            </div>
+
+            {/* Icerik */}
+            <div style={{fontSize:13,color:C.dim,lineHeight:'20px',marginBottom:12}}>
+              {current?.icerik}
+            </div>
+
+            {/* AI analizi */}
+            {current?.analiz&&(
+              <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:12,padding:10,marginBottom:12}}>
+                <div style={{fontSize:10,color:cfg.color,fontWeight:700,letterSpacing:'1px',marginBottom:3}}>💡 AI ANALİZİ</div>
+                <div style={{fontSize:12,color:cfg.color,lineHeight:'17px'}}>{current.analiz}</div>
+              </div>
+            )}
+
+            {/* Kaynak linki */}
+            {current?.url&&(
+              <a href={current.url} target="_blank" rel="noreferrer"
+                style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
+                  background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',fontWeight:700}}>
+                🔗 Haberin Tamamini Oku
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
