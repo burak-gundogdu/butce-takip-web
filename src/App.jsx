@@ -242,12 +242,14 @@ function AuthScreen() {
 
 // ─── GENEL EKRANI ──────────────────────────────────────────────────────────
 function HomeScreen({ data, setData, user }) {
-  const [rates, setRates]   = useState(null);
-  const [metals, setMetals] = useState(null);
-  const [rLoad, setRL]      = useState(true);
-  const [rErr, setRE]       = useState(null);
-  const [editBal, setEB]    = useState(false);
-  const [balIn, setBI]      = useState('');
+  const [rates, setRates]     = useState(null);
+  const [metals, setMetals]   = useState(null);
+  const [indices, setIndices] = useState(null);
+  const [rLoad, setRL]        = useState(true);
+  const [rErr, setRE]         = useState(null);
+  const [editBal, setEB]      = useState(false);
+  const [balIn, setBI]        = useState('');
+  const [dismissed, setDism]  = useState(new Set()); // Session-only, her acilista sifirlanir
 
   const income = data.transactions.filter(t => t.type==='gelir').reduce((a,t)=>a+t.amount,0);
   const spent  = data.transactions.filter(t => t.type==='gider').reduce((a,t)=>a+t.amount,0);
@@ -271,8 +273,13 @@ function HomeScreen({ data, setData, user }) {
     setRL(true); setRE(null);
     try {
       const r = await fetchRates(); setRates(r);
-      const [g,sv] = await Promise.all([yahooPrice('GC=F'), yahooPrice('SI=F')]);
+      const [g,sv,xu100,xu050,xu030,katilim] = await Promise.all([
+        yahooPrice('GC=F'), yahooPrice('SI=F'),
+        yahooPrice('XU100.IS'), yahooPrice('XU050.IS'),
+        yahooPrice('XU030.IS'), yahooPrice('XKTUM.IS'),
+      ]);
       setMetals({ goldGram: g?(g/TROY)*r.usdTry:null, silverGram: sv?(sv/TROY)*r.usdTry:null, goldUSD:g, silverUSD:sv });
+      if (xu100) setIndices({ bist100:xu100, bist50:xu050, bist30:xu030, katilim });
     } catch(e) { setRE(e.message); }
     setRL(false);
   }, []);
@@ -281,10 +288,12 @@ function HomeScreen({ data, setData, user }) {
 
   return (
     <div style={s.scrollArea}>
-      {/* Sadece admin duyurulari (haber degil) */}
-      {announcements.filter(a => a.tip !== 'haber').length > 0 && (
+      {/* Admin duyurulari - session icinde kapatilabilir, her acilista geri gelir */}
+      {announcements.filter(a => a.tip !== 'haber' && !dismissed.has(a.id)).length > 0 && (
         <div style={{marginBottom:4}}>
-          {announcements.filter(a => a.tip !== 'haber').map(ann => <AnnouncementCard key={ann.id} ann={ann} />)}
+          {announcements.filter(a => a.tip !== 'haber' && !dismissed.has(a.id)).map(ann => (
+            <AnnouncementCard key={ann.id} ann={ann} onDismiss={id => setDism(d => new Set([...d, id]))} />
+          ))}
         </div>
       )}
       {/* Bakiye */}
@@ -432,6 +441,25 @@ function HomeScreen({ data, setData, user }) {
               <div style={s.tiny}>${fmtD(metals.silverUSD,2)} / oz</div>
             </div>
             <span style={{fontSize:20,fontWeight:900,color:C.silver}}>{fmtD(metals.silverGram,1)} ₺</span>
+          </div>
+        )}
+        {/* BIST Endeksleri */}
+        {indices && (
+          <div style={{marginTop:12}}>
+            <div style={{fontSize:11,color:C.muted,fontWeight:700,letterSpacing:'1px',marginBottom:8}}>BIST ENDEKSLERİ</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {[
+                {label:'BIST 100', val:indices.bist100, color:C.blue},
+                {label:'BIST 50',  val:indices.bist50,  color:C.purple},
+                {label:'BIST 30',  val:indices.bist30,  color:C.accent},
+                {label:'Katilim',  val:indices.katilim, color:C.yellow},
+              ].map(idx => idx.val && (
+                <div key={idx.label} style={{background:`${idx.color}12`,border:`1px solid ${idx.color}40`,borderRadius:12,padding:10}}>
+                  <div style={{fontSize:10,color:idx.color,fontWeight:700}}>{idx.label}</div>
+                  <div style={{fontSize:16,fontWeight:900,color:C.text}}>{fmtD(idx.val,0)}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </Card>
@@ -1204,7 +1232,7 @@ function useAnnouncements() {
     const q = query(
       collection(db, 'announcements'),
       orderBy('createdAt', 'desc'),
-      limit(5)
+      limit(10)
     );
     const unsub = onSnapshot(q, snap => {
       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -1214,26 +1242,60 @@ function useAnnouncements() {
   return announcements;
 }
 
-// ─── DUYURU KARTI ──────────────────────────────────────────────────────────
-function AnnouncementCard({ ann }) {
+// ─── DUYURU KARTI - swipe to dismiss ───────────────────────────────────────
+function AnnouncementCard({ ann, onDismiss }) {
+  const [drag, setDrag]     = useState(0);
+  const [gone, setGone]     = useState(false);
+  const startX              = useRef(null);
   const tipConfig = {
     info:       { color: C.blue,   bg: C.blueBg,   icon: 'ℹ️' },
     uyari:      { color: C.yellow, bg: C.yellowBg,  icon: '⚠️' },
     guncelleme: { color: C.accent, bg: C.accentBg,  icon: '🆕' },
-    haber:      { color: C.purple, bg: C.purpleBg,  icon: '📰' },
     sistem:     { color: C.orange, bg: '#1c0a00',   icon: '🔔' },
   };
   const cfg = tipConfig[ann.tip] || tipConfig.info;
   const tarih = ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR') || '';
+
+  const onTS = (e) => { startX.current = e.touches[0].clientX; };
+  const onTM = (e) => {
+    if (startX.current === null) return;
+    setDrag(e.touches[0].clientX - startX.current);
+  };
+  const onTE = () => {
+    if (Math.abs(drag) > 80) {
+      setGone(true);
+      setTimeout(() => onDismiss?.(ann.id), 300);
+    } else {
+      setDrag(0);
+    }
+    startX.current = null;
+  };
+
+  if (gone) return null;
+
+  const opacity = Math.max(0, 1 - Math.abs(drag) / 150);
+  const hint = drag > 40 ? '→ Kapat' : drag < -40 ? 'Kapat ←' : null;
+
   return (
-    <div style={{background:cfg.bg, border:`1px solid ${cfg.color}40`, borderRadius:12, padding:12, marginBottom:8}}>
-      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-        <span style={{fontSize:14}}>{cfg.icon}</span>
-        <span style={{fontWeight:700,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
-        <span style={{fontSize:10,color:C.muted}}>{tarih}</span>
+    <div style={{position:'relative',marginBottom:8,overflow:'hidden',borderRadius:12}}>
+      {hint && (
+        <div style={{position:'absolute',top:'50%',transform:'translateY(-50%)',
+          [drag>0?'left':'right']:12,color:cfg.color,fontSize:11,fontWeight:700,opacity:Math.min(Math.abs(drag)/80,1)}}>
+          {hint}
+        </div>
+      )}
+      <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+        style={{background:cfg.bg, border:`1px solid ${cfg.color}40`, borderRadius:12, padding:12,
+          transform:`translateX(${drag}px)`, opacity, transition: drag===0?'all 0.3s':'none',
+          cursor:'grab'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+          <span style={{fontSize:14}}>{cfg.icon}</span>
+          <span style={{fontWeight:700,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
+          <span style={{fontSize:10,color:C.muted}}>{tarih}</span>
+        </div>
+        <div style={{fontSize:12,color:C.dim,lineHeight:'17px'}}>{ann.icerik}</div>
+        <div style={{...s.tiny,color:C.muted,marginTop:4}}>← Sola/Saga kaydirarak kapat</div>
       </div>
-      <div style={{fontSize:12,color:C.dim,lineHeight:'17px'}}>{ann.icerik}</div>
-      {ann.kaynak && <div style={{fontSize:10,color:cfg.color,marginTop:4}}>Kaynak: {ann.kaynak}</div>}
     </div>
   );
 }
@@ -1255,7 +1317,7 @@ function AdminScreen({ user }) {
   useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[msgs]);
 
   useEffect(()=>{
-    const q = query(collection(db,'announcements'),orderBy('createdAt','desc'),limit(20));
+    const q = query(collection(db,'announcements'),orderBy('createdAt','desc'),limit(100));
     return onSnapshot(q, snap=>setAnnL(snap.docs.map(d=>({id:d.id,...d.data()}))));
   },[]);
 
@@ -1521,6 +1583,7 @@ function NewsFeedScreen() {
   const [showSaved, setShowS]   = useState(false);
   const [saved, setSaved]       = useState([]);
   const [drag, setDrag]         = useState({x:0,y:0,dragging:false});
+  const [commentNews, setCN]    = useState(null); // {id, baslik}
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
 
@@ -1703,7 +1766,7 @@ function NewsFeedScreen() {
       </div>
 
       {/* Kart alani */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'8px 16px',position:'relative',overflow:'hidden',touchAction:'none'}}
+      <div style={{flex:1,display:'flex',flexDirection:'column',padding:'8px 16px',position:'relative',overflow:'hidden',touchAction:'none'}}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
         {swipeHint&&(
@@ -1724,9 +1787,10 @@ function NewsFeedScreen() {
         )}
 
         {/* Ana kart */}
-        <div style={{position:'relative',zIndex:1,background:cfg.bg,
-          border:`1px solid ${cfg.color}50`,borderRadius:24,
-          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',overflow:'hidden',...cardStyle}}>
+        <div style={{position:'relative',zIndex:1,background:cfg.bg,flex:1,
+          border:`1px solid ${cfg.color}50`,borderRadius:24,marginTop:8,
+          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',overflow:'hidden',
+          display:'flex',flexDirection:'column',...cardStyle}}>
 
           {/* Haber gorseli */}
           {current?.image && (
@@ -1738,7 +1802,7 @@ function NewsFeedScreen() {
             </div>
           )}
 
-          <div style={{padding:18}}>
+          <div style={{padding:18,overflowY:'auto',flex:1}}>
             {/* Kaynak + saat */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
               <span style={{fontSize:11,background:`${cfg.color}25`,borderRadius:20,padding:'3px 10px',color:cfg.color,fontWeight:700}}>
@@ -1769,18 +1833,29 @@ function NewsFeedScreen() {
               </div>
             )}
 
-            {/* Kaynak linki */}
-            {current?.url&&(
-              <a href={current.url} target="_blank" rel="noreferrer"
-                style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
-                  background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',fontWeight:700}}>
-                🔗 Haberin Tamamini Oku
-              </a>
-            )}
+            {/* Kaynak linki + yorum butonu */}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
+              {current?.url&&(
+                <a href={current.url} target="_blank" rel="noreferrer"
+                  style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
+                    background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',fontWeight:700}}>
+                  🔗 Haberin Tamamini Oku
+                </a>
+              )}
+              <button onClick={()=>setCN({id:current?.id,baslik:current?.baslik})}
+                style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:C.dim,
+                  background:C.border,border:'none',borderRadius:20,padding:'6px 14px',cursor:'pointer',fontWeight:600}}>
+                💬 Yorum Yap
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Yorum modali */}
+      {commentNews && (
+        <CommentsModal newsId={commentNews.id} newsTitle={commentNews.baslik} onClose={()=>setCN(null)}/>
+      )}
       {/* Navigasyon butonlari - sadece yukari asagi */}
       <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:24,padding:'12px 16px 20px',flexShrink:0}}>
         <button onClick={goPrev} disabled={idx===0}
@@ -1809,6 +1884,217 @@ function NewsFeedScreen() {
           <span style={{fontSize:10,color:C.muted}}>Yukari/Asagi Kaydır  |  🔖 Kaydet  |  🔗 Kaynaga Git</span>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ─── BIST HİSSE EKRANI ─────────────────────────────────────────────────────
+const BIST_STOCKS = [
+  {code:'THYAO',name:'Turk Hava Yollari'},{code:'GARAN',name:'Garanti BBVA'},
+  {code:'ASELS',name:'Aselsan'},{code:'EREGL',name:'Eregli Demir Celik'},
+  {code:'BIMAS',name:'BIM Birlesik Magazalar'},{code:'AKBNK',name:'Akbank'},
+  {code:'YKBNK',name:'Yapi ve Kredi Bankasi'},{code:'SAHOL',name:'Sabanci Holding'},
+  {code:'KCHOL',name:'Koc Holding'},{code:'SISE',name:'Sise ve Cam'},
+  {code:'TUPRS',name:'Tupras'},{code:'ARCLK',name:'Arcelik'},
+  {code:'TCELL',name:'Turkcell'},{code:'FROTO',name:'Ford Otosan'},
+  {code:'TOASO',name:'Tofas'},{code:'EKGYO',name:'Emlak Konut GYO'},
+  {code:'ISCTR',name:'Is Bankasi C'},{code:'HALKB',name:'Halkbank'},
+  {code:'VAKBN',name:'Vakifbank'},{code:'PGSUS',name:'Pegasus'},
+  {code:'KOZAL',name:'Koza Altin'},{code:'PETKM',name:'Petkim'},
+  {code:'TAVHL',name:'TAV Havalimanlari'},{code:'TKFEN',name:'Tekfen Holding'},
+  {code:'DOHOL',name:'Dogan Holding'},{code:'MGROS',name:'Migros'},
+  {code:'ULKER',name:'Ulker Biskuvi'},{code:'ENKAI',name:'Enka Insaat'},
+  {code:'OTKAR',name:'Otokar'},{code:'LOGO',name:'Logo Yazilim'},
+];
+
+function StocksScreen({ data, setData }) {
+  const [prices, setPrices]   = useState({});
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch]   = useState('');
+  const [tab, setTab]         = useState('tumü'); // 'tumü' | 'favoriler'
+  const favs = data.settings?.favStocks || [];
+
+  const filtered = BIST_STOCKS.filter(s =>
+    s.code.toLowerCase().includes(search.toLowerCase()) ||
+    s.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const displayed = tab === 'favoriler' ? filtered.filter(s => favs.includes(s.code)) : filtered;
+
+  const toggleFav = (code) => {
+    const newFavs = favs.includes(code) ? favs.filter(c => c !== code) : [...favs, code];
+    setData(d => ({...d, settings: {...d.settings, favStocks: newFavs}}));
+  };
+
+  const loadPrices = async (codes) => {
+    setLoading(true);
+    const newPrices = {...prices};
+    for (const code of codes) {
+      try {
+        const p = await yahooPrice(`${code}.IS`);
+        if (p) newPrices[code] = p;
+      } catch {}
+      await new Promise(r => setTimeout(r, 100));
+    }
+    setPrices(newPrices);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (favs.length > 0) loadPrices(favs);
+  }, []);
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* Baslik */}
+      <div style={{padding:'12px 16px 8px',background:'#0D1020',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <span style={{fontWeight:800,fontSize:14,color:C.text}}>BIST Hisseleri</span>
+          <button onClick={()=>loadPrices(displayed.slice(0,15).map(s=>s.code))}
+            disabled={loading}
+            style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'5px 12px',
+              color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+            {loading?<Spinner size={12}/>:null} Fiyat Guncelle
+          </button>
+        </div>
+        {/* Arama */}
+        <input style={{...s.input,marginBottom:8}} placeholder="Hisse ara... (THYAO, Garanti)"
+          value={search} onChange={e=>setSearch(e.target.value)}/>
+        {/* Tab */}
+        <div style={{display:'flex',background:C.card,borderRadius:10,padding:3,gap:3}}>
+          {['tumü','favoriler'].map(t=>(
+            <button key={t} onClick={()=>setTab(t)}
+              style={{flex:1,padding:'7px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:12,
+                background:tab===t?C.accent:'transparent',color:tab===t?'#0A0E1A':C.muted}}>
+              {t==='tumü'?`Tum Hisseler (${BIST_STOCKS.length})`:`⭐ Favoriler (${favs.length})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Liste */}
+      <div style={s.scrollArea}>
+        {tab==='favoriler' && favs.length===0 && (
+          <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>
+            <div style={{fontSize:40,marginBottom:12}}>⭐</div>
+            <div style={{fontWeight:700,color:C.text,marginBottom:6}}>Favori hisse yok</div>
+            <div style={{fontSize:13}}>Tum Hisseler sekmesinden yildiza tikla</div>
+          </div>
+        )}
+        {displayed.map(stock => {
+          const price = prices[stock.code];
+          const isFav = favs.includes(stock.code);
+          return (
+            <div key={stock.code} style={{display:'flex',alignItems:'center',padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontWeight:800,fontSize:14,color:C.text}}>{stock.code}</span>
+                  {isFav && <span style={{fontSize:10,color:C.yellow}}>⭐</span>}
+                </div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>{stock.name}</div>
+              </div>
+              <div style={{textAlign:'right',marginRight:12}}>
+                {price
+                  ? <div style={{fontWeight:800,fontSize:15,color:C.accent}}>{fmtD(price)} ₺</div>
+                  : <div style={{fontSize:12,color:C.muted}}>—</div>
+                }
+              </div>
+              <button onClick={()=>toggleFav(stock.code)}
+                style={{background:'none',border:`1px solid ${isFav?C.yellow:C.border}`,borderRadius:20,
+                  padding:'5px 10px',cursor:'pointer',fontSize:13,color:isFav?C.yellow:C.muted}}>
+                {isFav?'⭐':'☆'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── HABER YORUMLARI ────────────────────────────────────────────────────────
+function CommentsModal({ newsId, newsTitle, onClose }) {
+  const [comments, setComments] = useState([]);
+  const [name, setName]         = useState('');
+  const [text, setText]         = useState('');
+  const [sending, setSending]   = useState(false);
+
+  useEffect(() => {
+    if (!newsId) return;
+    const q = query(
+      collection(db, 'comments'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    const unsub = onSnapshot(q, snap => {
+      const all = snap.docs.map(d => ({id:d.id,...d.data()}));
+      setComments(all.filter(c => c.newsId === newsId));
+    });
+    return unsub;
+  }, [newsId]);
+
+  const submit = async () => {
+    if (!name.trim() || !text.trim()) return alert('Ad ve yorum gerekli');
+    setSending(true);
+    try {
+      await addDoc(collection(db, 'comments'), {
+        newsId,
+        name: name.trim().slice(0,30),
+        text: text.trim().slice(0,300),
+        createdAt: serverTimestamp(),
+      });
+      setText('');
+    } catch(e) { alert('Hata: '+e.message); }
+    setSending(false);
+  };
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+      <div style={{background:C.card,borderRadius:'20px 20px 0 0',border:`1px solid ${C.border}`,maxHeight:'75vh',display:'flex',flexDirection:'column'}}>
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 20px',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:14,color:C.text}}>Yorumlar ({comments.length})</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{newsTitle?.slice(0,50)}...</div>
+          </div>
+          <button onClick={onClose} style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',color:C.text,fontSize:18}}>×</button>
+        </div>
+        {/* Yorumlar */}
+        <div style={{flex:1,overflowY:'auto',padding:'12px 16px'}}>
+          {comments.length===0 && (
+            <div style={{textAlign:'center',padding:'24px',color:C.muted,fontSize:13}}>
+              Henuz yorum yok. Ilk yorumu sen yap!
+            </div>
+          )}
+          {comments.map(c => (
+            <div key={c.id} style={{background:C.bg,borderRadius:12,padding:'10px 12px',marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                <span style={{fontWeight:700,fontSize:13,color:C.accent}}>{c.name}</span>
+                <span style={{fontSize:10,color:C.muted}}>
+                  {c.createdAt?.toDate?.()?.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})||''}
+                </span>
+              </div>
+              <div style={{fontSize:13,color:C.text,lineHeight:'18px'}}>{c.text}</div>
+            </div>
+          ))}
+        </div>
+        {/* Yorum yaz */}
+        <div style={{padding:'12px 16px 20px',borderTop:`1px solid ${C.border}`,flexShrink:0}}>
+          <input style={{...s.input,marginBottom:8}} placeholder="Adiniz"
+            value={name} onChange={e=>setName(e.target.value)} maxLength={30}/>
+          <div style={{display:'flex',gap:8}}>
+            <input style={{...s.input,flex:1}} placeholder="Yorumunuz..."
+              value={text} onChange={e=>setText(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&submit()} maxLength={300}/>
+            <button onClick={submit} disabled={sending||!text.trim()||!name.trim()}
+              style={{background:sending||!text.trim()||!name.trim()?C.border:C.accent,border:'none',
+                borderRadius:12,padding:'0 16px',fontWeight:800,color:sending||!text.trim()||!name.trim()?C.muted:'#0A0E1A',
+                cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
+              {sending?<Spinner size={14}/>:null} Gonder
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1862,10 +2148,10 @@ export default function App() {
   const TABS = [
     {id:'home',   icon:'◉', label:'Genel'},
     {id:'news',   icon:'📰', label:'Haberler'},
+    {id:'stocks', icon:'📊', label:'Hisseler'},
     {id:'budget', icon:'₺', label:'Butce'},
     {id:'invest', icon:'↑', label:'Yatirim'},
     {id:'stats',  icon:'▦', label:'Analiz'},
-    {id:'ai',     icon:'✦', label:'Asistan'},
     {id:'more',   icon:'⋯', label:'Daha'},
   ];
 
@@ -1915,6 +2201,7 @@ export default function App() {
         <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
           {tab==='home'   && <HomeScreen   data={data} setData={setData} user={user} />}
           {tab==='news'   && <NewsFeedScreen />}
+          {tab==='stocks' && <StocksScreen data={data} setData={setData} />}
           {tab==='budget' && <BudgetScreen data={data} setData={setData} />}
           {tab==='invest' && <InvestmentScreen data={data} setData={setData} />}
           {tab==='stats'  && <StatsScreen  data={data} />}
