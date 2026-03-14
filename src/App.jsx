@@ -1240,293 +1240,390 @@ function AnnouncementCard({ ann }) {
 
 // ─── ADMİN EKRANI ──────────────────────────────────────────────────────────
 function AdminScreen({ user }) {
-  const [msgs, setMsgs]       = useState([{id:0, role:'admin', text:'Merhaba Burak! Yonetici asistanin hazir.\n\nOrnekler:\n"Bugun dolar haberi paylasimi yap"\n"Guncel haberleri cek ve paylasimi yap"\n"Yeni ozellik hakkinda duyuru olustur"\n"Kullanicilara bütce uyarisi gonder"'}]);
-  const [input, setInput]     = useState('');
-  const [loading, setL]       = useState(false);
-  const [annList, setAnnList] = useState([]);
-  const [stats, setStats]     = useState(null);
-  const bottomRef             = useRef(null);
+  const [tab, setTab]       = useState('asistan');
+  const [msgs, setMsgs]     = useState([{id:0,role:'admin',text:'Merhaba Burak! Yonetici panelindesin.\n\nOrnekler:\n"Yeni ozellik duyurusu olustur"\n"Kullanicilara altin uyarisi gonder"\n"Son dakika ekonomi haberi paylasimi yap"\n"Uygulama bakimda uyarisi olustur"'}]);
+  const [input, setInput]   = useState('');
+  const [loading, setL]     = useState(false);
+  const [annList, setAnnL]  = useState([]);
+  const [stats, setStats]   = useState(null);
+  const [manBaslik,setMB]   = useState('');
+  const [manIcerik,setMI]   = useState('');
+  const [manTip,setMT]      = useState('info');
+  const bottomRef           = useRef(null);
+  const ADMIN_TABS = [{id:'asistan',l:'AI Asistan'},{id:'duyurular',l:'Yayinda'},{id:'manuel',l:'Manuel'},{id:'istatistik',l:'Istatistik'}];
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:'smooth'}); }, [msgs]);
+  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[msgs]);
 
-  // Duyurulari getir
-  useEffect(() => {
-    const q = query(collection(db, 'announcements'), orderBy('createdAt','desc'), limit(10));
-    const unsub = onSnapshot(q, snap => {
-      setAnnList(snap.docs.map(d => ({id:d.id,...d.data()})));
+  useEffect(()=>{
+    const q = query(collection(db,'announcements'),orderBy('createdAt','desc'),limit(20));
+    return onSnapshot(q, snap=>setAnnL(snap.docs.map(d=>({id:d.id,...d.data()}))));
+  },[]);
+
+  useEffect(()=>{
+    getDocs(collection(db,'users')).then(snap=>{
+      const users = snap.docs.map(d=>d.id);
+      // Her kullanicinin islem sayisini topla
+      Promise.all(users.map(uid=>
+        getDocs(collection(db,'users',uid,'data')).then(s=>s.size).catch(()=>0)
+      )).then(counts=>{
+        setStats({
+          userCount: snap.size,
+          haberCount: annList.filter(a=>a.tip==='haber').length,
+          duyuruCount: annList.filter(a=>a.tip!=='haber').length,
+        });
+      });
+    }).catch(()=>{});
+  },[annList]);
+
+  const deleteAnn = async(id)=>{ if(!confirm('Sil?')) return; await deleteDoc(doc(db,'announcements',id)); };
+
+  const manuelEkle = async()=>{
+    if(!manBaslik||!manIcerik) return alert('Baslik ve icerik gerekli');
+    await addDoc(collection(db,'announcements'),{
+      baslik:manBaslik, icerik:manIcerik, tip:manTip,
+      kaynak:null, createdAt:serverTimestamp()
     });
-    return unsub;
-  }, []);
-
-  // Kullanici istatistikleri
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        setStats({ userCount: usersSnap.size });
-      } catch {}
-    };
-    fetchStats();
-  }, []);
-
-  const deleteAnn = async (id) => {
-    if (!confirm('Bu duyuruyu sil?')) return;
-    await deleteDoc(doc(db, 'announcements', id));
+    setMB(''); setMI('');
+    alert('Duyuru yayinlandi!');
   };
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || loading) return;
-    setMsgs(m => [...m, {id:Date.now(), role:'user', text}]);
-    setInput('');
-    setL(true);
+  const send = async()=>{
+    const text=input.trim(); if(!text||loading) return;
+    setMsgs(m=>[...m,{id:Date.now(),role:'user',text}]); setInput(''); setL(true);
     try {
-      const token = await getIdToken(auth.currentUser, true);
-      const res = await fetch('/api/admin', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
-        body: JSON.stringify({ command: text }),
+      const token = await getIdToken(auth.currentUser,true);
+      const res = await fetch('/api/admin',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
+        body:JSON.stringify({command:text}),
       });
       const parsed = await res.json();
-      if (parsed.error) throw new Error(parsed.error);
-
-      // Duyuru veya haber ise Firestore'a kaydet
-      if (['duyuru','haber','sistem'].includes(parsed.tur)) {
-        await addDoc(collection(db, 'announcements'), {
+      if(parsed.error) throw new Error(parsed.error);
+      if(['duyuru','haber','sistem'].includes(parsed.tur)){
+        await addDoc(collection(db,'announcements'),{
           baslik: parsed.baslik,
           icerik: parsed.icerik,
-          tip: parsed.tur === 'haber' ? 'haber' : parsed.tip || parsed.tur,
-          kaynak: parsed.kaynak || null,
+          tip: parsed.tur==='haber'?'haber':(parsed.tip||parsed.tur),
+          kaynak: parsed.kaynak||null,
           createdAt: serverTimestamp(),
         });
-        setMsgs(m => [...m, {id:Date.now()+1, role:'admin',
-          text: `✅ Yayinlandi! "${parsed.baslik}" — tum kullanicilar gorecek.`}]);
+        setMsgs(m=>[...m,{id:Date.now()+1,role:'admin',text:`✅ Yayinlandi!\n"${parsed.baslik}"\nTum kullanicilar gorecek.`}]);
       } else {
-        setMsgs(m => [...m, {id:Date.now()+1, role:'admin', text: parsed.mesaj || JSON.stringify(parsed)}]);
+        setMsgs(m=>[...m,{id:Date.now()+1,role:'admin',text:parsed.mesaj||'Tamam.'}]);
       }
-    } catch(e) {
-      setMsgs(m => [...m, {id:Date.now()+1, role:'admin', text:'Hata: '+e.message, error:true}]);
+    } catch(e){
+      setMsgs(m=>[...m,{id:Date.now()+1,role:'admin',text:'Hata: '+e.message,error:true}]);
     }
     setL(false);
   };
 
-  const QUICK_CMDS = [
-    'Son dakika ekonomi haberlerini cek ve paylasim yap',
-    'Yeni ozellik eklendi duyurusu olustur',
-    'Kullanicilara butce uyarisi gonder',
-    'Dolar kuru hakkinda bilgi ver',
-    'Sistem bakimi hakkinda uyari olustur',
-  ];
+  const tipRenk = {info:C.blue,uyari:C.yellow,guncelleme:C.accent,haber:C.purple,sistem:C.orange};
+  const tipAdi  = {info:'Bilgi',uyari:'Uyari',guncelleme:'Guncelleme',haber:'Haber',sistem:'Sistem'};
+  const QUICK = ['Yeni ozellik eklendi duyurusu olustur','Altin fiyati yurekse uyari gonder','Kullanicilara butce ipucu ver','Uygulama guncelleme duyurusu','Dolar kuru hakkinda piyasa analizi'];
 
-  const tipLabel = { info:'Bilgi', uyari:'Uyari', guncelleme:'Guncelleme', haber:'Haber', sistem:'Sistem' };
-  const tipColor = { info:C.blue, uyari:C.yellow, guncelleme:C.accent, haber:C.purple, sistem:C.orange };
+  const duyurular = annList.filter(a=>a.tip!=='haber');
+  const haberler  = annList.filter(a=>a.tip==='haber');
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:C.bg}}>
-
-      {/* Admin header */}
-      <div style={{background:'#0D0A1A',borderBottom:`1px solid ${C.purple}40`,padding:'10px 16px',flexShrink:0}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      {/* Header */}
+      <div style={{background:'#0D0A1A',borderBottom:`1px solid ${C.purple}40`,padding:'10px 16px 0',flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <div style={{width:8,height:8,borderRadius:4,background:C.purple}}/>
-            <span style={{fontWeight:800,fontSize:13,color:C.purple}}>YONETICI PANELI</span>
+            <div style={{width:8,height:8,borderRadius:4,background:C.purple,boxShadow:`0 0 8px ${C.purple}`}}/>
+            <span style={{fontWeight:900,fontSize:13,color:C.purple,letterSpacing:'1px'}}>ADMIN PANEL</span>
           </div>
-          {stats && <span style={{fontSize:11,color:C.muted}}>{stats.userCount} kullanici</span>}
+          <div style={{display:'flex',gap:8}}>
+            <span style={{fontSize:11,background:C.purpleBg,border:`1px solid ${C.purple}40`,borderRadius:20,padding:'3px 10px',color:C.purple}}>{stats?.userCount||0} kullanici</span>
+            <span style={{fontSize:11,background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'3px 10px',color:C.accent}}>{duyurular.length} duyuru</span>
+          </div>
+        </div>
+        {/* Sub tabs */}
+        <div style={{display:'flex',gap:0}}>
+          {ADMIN_TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{flex:1,padding:'8px 4px',border:'none',background:'transparent',cursor:'pointer',
+                fontWeight:700,fontSize:11,color:tab===t.id?C.purple:C.muted,
+                borderBottom:`2px solid ${tab===t.id?C.purple:'transparent'}`,transition:'all 0.2s'}}>
+              {t.l}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column'}}>
-
-        {/* Istatistik kartlari */}
-        <div style={{padding:'12px 16px 0',display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          <div style={{background:C.purpleBg,border:`1px solid ${C.purple}40`,borderRadius:12,padding:12}}>
-            <div style={{fontSize:10,color:C.muted,letterSpacing:'1px'}}>KULLANICI</div>
-            <div style={{fontSize:24,fontWeight:900,color:C.purple}}>{stats?.userCount || '-'}</div>
-          </div>
-          <div style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:12,padding:12}}>
-            <div style={{fontSize:10,color:C.muted,letterSpacing:'1px'}}>DUYURU</div>
-            <div style={{fontSize:24,fontWeight:900,color:C.accent}}>{annList.length}</div>
-          </div>
-        </div>
-
-        {/* Yayinlanan duyurular */}
-        {annList.length > 0 && (
-          <div style={{padding:'12px 16px 0'}}>
-            <div style={{fontSize:11,color:C.muted,fontWeight:700,marginBottom:8,letterSpacing:'1px'}}>YAYINDA</div>
-            {annList.map(ann => (
-              <div key={ann.id} style={{display:'flex',alignItems:'center',gap:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'8px 12px',marginBottom:6}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,fontWeight:700,color:tipColor[ann.tip]||C.text}}>{ann.baslik}</div>
-                  <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                    {tipLabel[ann.tip]||ann.tip} — {ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR')||''}
-                  </div>
+      {/* AI ASISTAN TAB */}
+      {tab==='asistan' && (
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{flex:1,overflowY:'auto',padding:14}}>
+            {msgs.map(msg=>(
+              <div key={msg.id} style={{display:'flex',justifyContent:msg.role==='user'?'flex-end':'flex-start',marginBottom:10}}>
+                <div style={{maxWidth:'88%',background:msg.role==='user'?'#1a0d2e':msg.error?C.redBg:C.card,
+                  borderRadius:14,borderBottomRightRadius:msg.role==='user'?3:14,borderBottomLeftRadius:msg.role==='user'?14:3,
+                  padding:'10px 12px',border:`1px solid ${msg.role==='user'?C.purple+'60':msg.error?C.red+'50':C.border}`}}>
+                  {msg.role==='admin'&&<div style={{fontSize:9,color:C.purple,fontWeight:700,marginBottom:4}}>AI ASISTAN</div>}
+                  <div style={{color:msg.role==='user'?C.purple:C.text,fontSize:13,lineHeight:'19px',whiteSpace:'pre-wrap'}}>{msg.text}</div>
                 </div>
-                <button onClick={()=>deleteAnn(ann.id)}
-                  style={{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:16,padding:4}}>
-                  X
-                </button>
               </div>
             ))}
-          </div>
-        )}
-
-        {/* Chat */}
-        <div style={{flex:1,padding:'12px 16px'}}>
-          <div style={{fontSize:11,color:C.muted,fontWeight:700,marginBottom:8,letterSpacing:'1px'}}>ASISTAN</div>
-          {msgs.map(msg => (
-            <div key={msg.id} style={{display:'flex',justifyContent:msg.role==='user'?'flex-end':'flex-start',marginBottom:10}}>
-              <div style={{maxWidth:'88%',background:msg.role==='user'?'#1a0d2e':msg.error?C.redBg:C.card,
-                borderRadius:14,borderBottomRightRadius:msg.role==='user'?3:14,borderBottomLeftRadius:msg.role==='user'?14:3,
-                padding:'10px 12px',border:`1px solid ${msg.role==='user'?C.purple+'60':msg.error?C.red+'50':C.border}`}}>
-                {msg.role==='admin'&&<div style={{fontSize:9,color:C.purple,fontWeight:700,marginBottom:4}}>YONETİCİ AI</div>}
-                <div style={{color:msg.role==='user'?C.purple:C.text,fontSize:13,lineHeight:'19px',whiteSpace:'pre-wrap'}}>{msg.text}</div>
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div style={{display:'flex',marginBottom:10}}>
+            {loading&&<div style={{display:'flex',marginBottom:10}}>
               <div style={{background:C.card,borderRadius:14,borderBottomLeftRadius:3,padding:12,border:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:8}}>
                 <Spinner size={14} color={C.purple}/><span style={{color:C.muted,fontSize:12}}>Isliyor...</span>
               </div>
-            </div>
-          )}
-          <div ref={bottomRef}/>
+            </div>}
+            <div ref={bottomRef}/>
+          </div>
+          <div style={{display:'flex',overflowX:'auto',padding:'8px 12px',gap:8,borderTop:`1px solid ${C.border}`,flexShrink:0}}>
+            {QUICK.map((q,i)=>(
+              <button key={i} onClick={()=>setInput(q)}
+                style={{background:'#1a0d2e',border:`1px solid ${C.purple}40`,borderRadius:8,padding:'6px 12px',
+                  color:C.purple,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>{q}</button>
+            ))}
+          </div>
+          <div style={{display:'flex',padding:12,paddingBottom:16,background:C.card,borderTop:`1px solid ${C.border}`,gap:10,flexShrink:0}}>
+            <input style={{...s.input,flex:1}} placeholder="Komut ver..."
+              value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}/>
+            <button onClick={send} disabled={loading||!input.trim()}
+              style={{background:loading||!input.trim()?C.border:C.purple,border:'none',borderRadius:12,
+                padding:'0 16px',fontWeight:800,color:loading||!input.trim()?C.muted:'#fff',
+                cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
+              {loading?<Spinner size={16} color={C.purple}/>:null} Gonder
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Hizli komutlar */}
-      <div style={{display:'flex',overflowX:'auto',borderTop:`1px solid ${C.border}`,padding:'8px 12px',gap:8,flexShrink:0}}>
-        {QUICK_CMDS.map((cmd,i)=>(
-          <button key={i} onClick={()=>setInput(cmd)}
-            style={{background:'#1a0d2e',border:`1px solid ${C.purple}40`,borderRadius:8,padding:'6px 12px',
-              color:C.purple,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
-            {cmd}
-          </button>
-        ))}
-      </div>
+      {/* YAYINDA TAB */}
+      {tab==='duyurular' && (
+        <div style={s.scrollArea}>
+          {duyurular.length===0&&haberler.length===0 && <div style={{...s.tiny,textAlign:'center',padding:'24px 0'}}>Hic yayinlanmis icerik yok</div>}
+          {duyurular.length>0&&<>
+            <div style={{fontSize:10,color:C.muted,fontWeight:700,letterSpacing:'1px',marginBottom:8}}>DUYURULAR ({duyurular.length})</div>
+            {duyurular.map(ann=>(
+              <div key={ann.id} style={{display:'flex',alignItems:'flex-start',gap:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',marginBottom:8}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:700,color:tipRenk[ann.tip]||C.text}}>{ann.baslik}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{tipAdi[ann.tip]||ann.tip} — {ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR')||''}</div>
+                  <div style={{fontSize:11,color:C.dim,marginTop:4}}>{ann.icerik?.slice(0,80)}...</div>
+                </div>
+                <button onClick={()=>deleteAnn(ann.id)} style={{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:18,padding:'0 4px'}}>×</button>
+              </div>
+            ))}
+          </>}
+          {haberler.length>0&&<>
+            <div style={{fontSize:10,color:C.muted,fontWeight:700,letterSpacing:'1px',marginBottom:8,marginTop:12}}>HABERLER ({haberler.length})</div>
+            {haberler.map(ann=>(
+              <div key={ann.id} style={{display:'flex',alignItems:'flex-start',gap:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',marginBottom:8}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.purple}}>{ann.baslik}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{ann.kaynak||'Bot'} — {ann.createdAt?.toDate?.()?.toLocaleDateString('tr-TR')||''}</div>
+                </div>
+                <button onClick={()=>deleteAnn(ann.id)} style={{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:18,padding:'0 4px'}}>×</button>
+              </div>
+            ))}
+          </>}
+        </div>
+      )}
 
-      {/* Input */}
-      <div style={{display:'flex',padding:12,paddingBottom:16,background:C.card,borderTop:`1px solid ${C.border}`,gap:10,flexShrink:0}}>
-        <input style={{...s.input,flex:1}} placeholder="Komut ver... (orn: bugun dolar haberi paylasimi yap)"
-          value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} />
-        <button onClick={send} disabled={loading||!input.trim()}
-          style={{background:loading||!input.trim()?C.border:C.purple,border:'none',borderRadius:12,
-            padding:'0 16px',fontWeight:800,color:loading||!input.trim()?C.muted:'#fff',
-            cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
-          {loading?<Spinner size={16} color={C.purple}/>:null} Gonder
-        </button>
-      </div>
+      {/* MANUEL DUYURU TAB */}
+      {tab==='manuel' && (
+        <div style={s.scrollArea}>
+          <Card style={{borderColor:C.purple}}>
+            <H title="Manuel Duyuru Olustur" sub="AI olmadan direkt yayinla"/>
+            <div style={{display:'flex',gap:8,marginBottom:12}}>
+              {['info','uyari','guncelleme','sistem'].map(t=>(
+                <button key={t} onClick={()=>setMT(t)}
+                  style={{flex:1,padding:'8px 4px',border:'none',borderRadius:10,cursor:'pointer',fontWeight:700,fontSize:11,
+                    background:manTip===t?(tipRenk[t]+'33'):'transparent',
+                    color:manTip===t?tipRenk[t]:C.muted,
+                    border:`1px solid ${manTip===t?tipRenk[t]:C.border}`}}>
+                  {tipAdi[t]}
+                </button>
+              ))}
+            </div>
+            <input style={{...s.input,marginBottom:10}} placeholder="Duyuru basligi" value={manBaslik} onChange={e=>setMB(e.target.value)}/>
+            <textarea style={{...s.input,minHeight:80,resize:'vertical',marginBottom:10}} placeholder="Duyuru icerik" value={manIcerik} onChange={e=>setMI(e.target.value)}/>
+            <button onClick={manuelEkle} style={{...s.btn,background:tipRenk[manTip]||C.accent}}>Yayinla</button>
+          </Card>
+          <Card>
+            <H title="Toplu Silme"/>
+            <button onClick={async()=>{
+              if(!confirm('Tum haberleri sil? (Duyurular kalir)')) return;
+              const q2=query(collection(db,'announcements'),orderBy('createdAt','desc'),limit(100));
+              const snap=await getDocs(q2);
+              let c=0;
+              for(const d of snap.docs){
+                if(d.data().tip==='haber'){await deleteDoc(doc(db,'announcements',d.id));c++;}
+              }
+              alert(c+' haber silindi');
+            }} style={{...s.btn,background:C.redBg,border:`1px solid ${C.red}`,color:C.red}}>
+              Tum Haberleri Sil
+            </button>
+            <button onClick={async()=>{
+              if(!confirm('Tum duyurulari sil?')) return;
+              const q2=query(collection(db,'announcements'),orderBy('createdAt','desc'),limit(100));
+              const snap=await getDocs(q2);
+              let c=0;
+              for(const d of snap.docs){
+                if(d.data().tip!=='haber'){await deleteDoc(doc(db,'announcements',d.id));c++;}
+              }
+              alert(c+' duyuru silindi');
+            }} style={{...s.btn,background:C.yellowBg,border:`1px solid ${C.yellow}`,color:C.yellow,marginTop:8}}>
+              Tum Duyurulari Sil
+            </button>
+          </Card>
+        </div>
+      )}
+
+      {/* ISTATISTIK TAB */}
+      {tab==='istatistik' && (
+        <div style={s.scrollArea}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <Card style={{...s.half,borderColor:C.purple}}>
+              <span style={s.label}>KULLANICI</span>
+              <div style={{fontSize:32,fontWeight:900,color:C.purple}}>{stats?.userCount||'-'}</div>
+            </Card>
+            <Card style={{...s.half,borderColor:C.accent}}>
+              <span style={s.label}>DUYURU</span>
+              <div style={{fontSize:32,fontWeight:900,color:C.accent}}>{duyurular.length}</div>
+            </Card>
+            <Card style={{...s.half,borderColor:C.blue}}>
+              <span style={s.label}>HABER</span>
+              <div style={{fontSize:32,fontWeight:900,color:C.blue}}>{haberler.length}</div>
+            </Card>
+            <Card style={{...s.half,borderColor:C.orange}}>
+              <span style={s.label}>TOPLAM</span>
+              <div style={{fontSize:32,fontWeight:900,color:C.orange}}>{annList.length}</div>
+            </Card>
+          </div>
+          <Card>
+            <H title="Son 5 Haber" sub="Bot tarafindan eklendi"/>
+            {haberler.slice(0,5).map(h=>(
+              <div key={h.id} style={s.row}>
+                <span style={{...s.body,fontSize:12,flex:1,paddingRight:8}}>{h.baslik?.slice(0,50)}...</span>
+                <span style={{fontSize:10,color:C.muted}}>{h.kaynak||'Bot'}</span>
+              </div>
+            ))}
+            {haberler.length===0&&<div style={{...s.tiny,textAlign:'center',padding:'12px 0'}}>Haber yok</div>}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── HABER FEED EKRANI ─────────────────────────────────────────────────────
 function NewsFeedScreen() {
-  const [cards, setCards]     = useState([]);
-  const [idx, setIdx]         = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [swipeDir, setSwipe]  = useState(null); // 'left' | 'right' | 'up' | 'down'
-  const [saved, setSaved]     = useState([]);
-  const [showSaved, setShowS] = useState(false);
-  const [drag, setDrag]       = useState({ x: 0, y: 0, dragging: false });
-  const startRef              = useRef(null);
-  const cardRef               = useRef(null);
+  const [allCards, setAllCards] = useState([]);
+  const [cards, setCards]       = useState([]);
+  const [idx, setIdx]           = useState(0);
+  const [loading, setLoading]   = useState(true);
+  const [swipeDir, setSwipe]    = useState(null);
+  const [saved, setSaved]       = useState([]);
+  const [showSaved, setShowS]   = useState(false);
+  const [drag, setDrag]         = useState({x:0,y:0,dragging:false});
+  const startRef                = useRef(null);
+  const dragRef                 = useRef({x:0,y:0});
+  const cardRef                 = useRef(null);
 
-  // Firestore'dan haberleri çek
-  useEffect(() => {
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(50));
-    const unsub = onSnapshot(q, snap => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setCards(docs);
+  // SADECE tip==='haber' olanları cek — admin duyurulari buraya gelmez
+  useEffect(()=>{
+    const q = query(collection(db,'announcements'), orderBy('createdAt','desc'), limit(100));
+    const unsub = onSnapshot(q, snap=>{
+      const docs = snap.docs
+        .map(d=>({id:d.id,...d.data()}))
+        .filter(d=>d.tip==='haber'); // SADECE haberler
+      setAllCards(docs);
+      // Karistir
+      const shuffled = [...docs].sort(()=>Math.random()-0.5);
+      setCards(shuffled);
       setLoading(false);
     });
     return unsub;
-  }, []);
+  },[]);
 
   const current = cards[idx];
-  const progress = cards.length ? ((idx) / cards.length) * 100 : 0;
+  const progress = cards.length?((idx)/cards.length)*100:0;
 
   const tipCfg = {
-    haber:      { color: C.purple, bg: '#0f0a1f', icon: '📰', label: 'Haber' },
-    info:       { color: C.blue,   bg: '#070d1f', icon: 'ℹ️',  label: 'Bilgi' },
-    uyari:      { color: C.yellow, bg: '#100e00', icon: '⚠️',  label: 'Uyarı' },
-    guncelleme: { color: C.accent, bg: '#041510', icon: '🆕',  label: 'Güncelleme' },
-    sistem:     { color: C.orange, bg: '#120600', icon: '🔔',  label: 'Sistem' },
+    haber:  {color:C.purple,bg:'#0f0a1f',icon:'📰',label:'Haber'},
+    info:   {color:C.blue,  bg:'#070d1f',icon:'ℹ️', label:'Bilgi'},
+    uyari:  {color:C.yellow,bg:'#100e00',icon:'⚠️', label:'Uyari'},
   };
 
-  const goNext = (dir) => {
-    if (idx >= cards.length - 1) return;
-    setSwipe(dir || 'up');
-    setTimeout(() => { setIdx(i => i + 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); dragRef.current = {x:0,y:0}; }, 280);
+  const shuffle = () => {
+    const shuffled = [...allCards].sort(()=>Math.random()-0.5);
+    setCards(shuffled);
+    setIdx(0);
   };
-  const goPrev = () => {
-    if (idx === 0) return;
+
+  const goNext=(dir)=>{
+    if(idx>=cards.length-1) return;
+    setSwipe(dir||'up');
+    setTimeout(()=>{ setIdx(i=>i+1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },280);
+  };
+  const goPrev=()=>{
+    if(idx===0) return;
     setSwipe('down');
-    setTimeout(() => { setIdx(i => i - 1); setSwipe(null); setDrag({ x:0, y:0, dragging:false }); dragRef.current = {x:0,y:0}; }, 280);
+    setTimeout(()=>{ setIdx(i=>i-1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },280);
   };
-  const saveCard = () => {
-    if (current && !saved.find(s => s.id === current.id)) setSaved(s => [...s, current]);
+  const saveCard=()=>{
+    if(current&&!saved.find(s=>s.id===current.id)) setSaved(s=>[...s,current]);
     goNext('right');
   };
-  const skipCard = () => goNext('left');
+  const skipCard=()=>goNext('left');
 
-  // Touch handlers — dragRef ile closure sorununu coz
-  const dragRef = useRef({ x: 0, y: 0 });
-
-  const onTouchStart = (e) => {
-    const t = e.touches[0];
-    startRef.current = { x: t.clientX, y: t.clientY };
-    dragRef.current = { x: 0, y: 0 };
-    setDrag({ x: 0, y: 0, dragging: true });
+  const onTouchStart=(e)=>{
+    const t=e.touches[0];
+    startRef.current={x:t.clientX,y:t.clientY};
+    dragRef.current={x:0,y:0};
+    setDrag({x:0,y:0,dragging:true});
   };
-  const onTouchMove = (e) => {
-    if (!startRef.current) return;
+  const onTouchMove=(e)=>{
+    if(!startRef.current) return;
     e.preventDefault();
-    const t = e.touches[0];
-    const dx = t.clientX - startRef.current.x;
-    const dy = t.clientY - startRef.current.y;
-    dragRef.current = { x: dx, y: dy };
-    setDrag({ x: dx, y: dy, dragging: true });
+    const t=e.touches[0];
+    const dx=t.clientX-startRef.current.x;
+    const dy=t.clientY-startRef.current.y;
+    dragRef.current={x:dx,y:dy};
+    setDrag({x:dx,y:dy,dragging:true});
   };
-  const onTouchEnd = () => {
-    // dragRef kullan, eski state'i okuma
-    const { x, y } = dragRef.current;
-    const threshold = 55;
-    if (Math.abs(x) > Math.abs(y)) {
-      if (x > threshold) saveCard();
-      else if (x < -threshold) skipCard();
-      else { setDrag({ x:0, y:0, dragging:false }); dragRef.current={x:0,y:0}; }
+  const onTouchEnd=()=>{
+    const {x,y}=dragRef.current;
+    const thr=55;
+    if(Math.abs(x)>Math.abs(y)){
+      if(x>thr) saveCard();
+      else if(x<-thr) skipCard();
+      else { setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; }
     } else {
-      if (y < -threshold) goNext('up');
-      else if (y > threshold) goPrev();
-      else { setDrag({ x:0, y:0, dragging:false }); dragRef.current={x:0,y:0}; }
+      if(y<-thr) goNext('up');
+      else if(y>thr) goPrev();
+      else { setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; }
     }
-    startRef.current = null;
+    startRef.current=null;
   };
 
-  // Keyboard support
-  useEffect(() => {
-    const h = (e) => {
-      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') goNext('up');
-      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') goPrev();
+  useEffect(()=>{
+    const h=(e)=>{
+      if(e.key==='ArrowUp'||e.key==='ArrowRight') goNext('up');
+      if(e.key==='ArrowDown'||e.key==='ArrowLeft') goPrev();
     };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [idx, cards.length]);
+    window.addEventListener('keydown',h);
+    return ()=>window.removeEventListener('keydown',h);
+  },[idx,cards.length]);
 
-  // Kaydedilenler ekranı
-  if (showSaved) {
+  // Kaydedilenler
+  if(showSaved){
     return (
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:'#0D0A1A',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-          <button onClick={()=>setShowS(false)} style={{background:'none',border:'none',color:C.accent,fontSize:20,cursor:'pointer'}}>←</button>
+          <button onClick={()=>setShowS(false)} style={{background:'none',border:'none',color:C.accent,fontSize:22,cursor:'pointer',lineHeight:1}}>←</button>
           <span style={{fontWeight:800,fontSize:14,color:C.text}}>Kaydedilenler ({saved.length})</span>
         </div>
         <div style={s.scrollArea}>
-          {saved.length === 0
-            ? <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>Henuz kaydettigin haber yok.<br/>Haberleri saga kaydirarak kaydet.</div>
-            : saved.map((ann,i) => {
-                const cfg = tipCfg[ann.tip] || tipCfg.info;
+          {saved.length===0
+            ? <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>Hic kaydedilen haber yok.<br/>Saga kaydirarak kaydet.</div>
+            : saved.map((ann,i)=>{
+                const cfg=tipCfg[ann.tip]||tipCfg.haber;
                 return (
                   <div key={i} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:14,padding:16,marginBottom:10}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -1534,10 +1631,10 @@ function NewsFeedScreen() {
                       <span style={{fontWeight:800,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
                     </div>
                     <div style={{fontSize:13,color:C.dim,lineHeight:'19px',marginBottom:6}}>{ann.icerik}</div>
-                    {ann.analiz && <div style={{fontSize:12,color:cfg.color,background:`${cfg.color}15`,borderRadius:8,padding:'6px 10px',marginTop:6}}>💡 {ann.analiz}</div>}
-                    {ann.etiket && <div style={{fontSize:11,fontWeight:700,color:cfg.color,marginTop:6}}>{ann.etiket}</div>}
+                    {ann.analiz&&<div style={{fontSize:12,color:cfg.color,background:`${cfg.color}15`,borderRadius:8,padding:'6px 10px',marginBottom:6}}>💡 {ann.analiz}</div>}
+                    {ann.etiket&&<div style={{fontSize:11,fontWeight:700,color:cfg.color}}>{ann.etiket}</div>}
                     <button onClick={()=>setSaved(s=>s.filter((_,j)=>j!==i))}
-                      style={{background:'none',border:`1px solid ${C.border}`,borderRadius:8,padding:'5px 10px',color:C.muted,fontSize:11,cursor:'pointer',marginTop:8}}>
+                      style={{background:'none',border:`1px solid ${C.border}`,borderRadius:8,padding:'4px 10px',color:C.muted,fontSize:11,cursor:'pointer',marginTop:8}}>
                       Kaldir
                     </button>
                   </div>
@@ -1549,70 +1646,72 @@ function NewsFeedScreen() {
     );
   }
 
-  if (loading) return (
+  if(loading) return (
     <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',gap:12}}>
-      <Spinner size={36}/>
-      <span style={{color:C.muted,fontSize:13}}>Haberler yukleniyor...</span>
+      <Spinner size={36}/><span style={{color:C.muted,fontSize:13}}>Haberler yukleniyor...</span>
     </div>
   );
 
-  if (cards.length === 0) return (
+  if(cards.length===0) return (
     <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
       <div style={{fontSize:48,marginBottom:12}}>📭</div>
-      <div style={{color:C.text,fontWeight:700,fontSize:16,marginBottom:8}}>Henuz haber yok</div>
-      <div style={{color:C.muted,fontSize:13}}>Bot yakininda otomatik haber paylasmaya baslayacak.</div>
+      <div style={{color:C.text,fontWeight:700,fontSize:16,marginBottom:8}}>Haber yok</div>
+      <div style={{color:C.muted,fontSize:13}}>Bot yakinda otomatik haber paylasmaya baslayacak.</div>
     </div>
   );
 
-  if (idx >= cards.length) return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
-      <div style={{fontSize:56,marginBottom:16}}>🎉</div>
-      <div style={{color:C.text,fontWeight:800,fontSize:18,marginBottom:8}}>Hepsini okudun!</div>
-      <div style={{color:C.muted,fontSize:13,marginBottom:24}}>Bugun icin tum haberler bu kadar.</div>
-      <button onClick={()=>setIdx(0)} style={{...s.btn,width:'auto',padding:'12px 32px'}}>Bastan Baslat</button>
-      {saved.length > 0 && (
-        <button onClick={()=>setShowS(true)} style={{...s.btnSec,width:'auto',padding:'12px 32px',marginTop:0}}>
-          Kaydedilenleri Gor ({saved.length})
+  // Sonsuz dongu — sona gelince karistir ve basla
+  if(idx>=cards.length){
+    return (
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
+        <div style={{fontSize:56,marginBottom:16}}>🎉</div>
+        <div style={{color:C.text,fontWeight:800,fontSize:18,marginBottom:8}}>Hepsini okudun!</div>
+        <div style={{color:C.muted,fontSize:13,marginBottom:24}}>{cards.length} haber tamamlandi.</div>
+        <button onClick={shuffle} style={{...s.btn,width:'auto',padding:'14px 36px',fontSize:15}}>
+          🔀 Tekrar Baslat
         </button>
-      )}
-    </div>
-  );
+        {saved.length>0&&(
+          <button onClick={()=>setShowS(true)} style={{...s.btnSec,width:'auto',padding:'12px 32px',marginTop:0}}>
+            🔖 Kaydedilenleri Gor ({saved.length})
+          </button>
+        )}
+      </div>
+    );
+  }
 
-  const cfg = tipCfg[current?.tip] || tipCfg.info;
+  const cfg = tipCfg[current?.tip]||tipCfg.haber;
 
-  // Swipe animasyonu
-  const cardStyle = (() => {
-    if (swipeDir === 'left')  return { transform:'translateX(-120%) rotate(-15deg)', opacity:0, transition:'all 0.28s ease' };
-    if (swipeDir === 'right') return { transform:'translateX(120%) rotate(15deg)',  opacity:0, transition:'all 0.28s ease' };
-    if (swipeDir === 'up')    return { transform:'translateY(-110%)', opacity:0, transition:'all 0.28s ease' };
-    if (swipeDir === 'down')  return { transform:'translateY(110%)',  opacity:0, transition:'all 0.28s ease' };
-    if (drag.dragging && (Math.abs(drag.x) > 5 || Math.abs(drag.y) > 5)) {
-      const rot = drag.x * 0.08;
-      return { transform:`translate(${drag.x}px, ${drag.y}px) rotate(${rot}deg)`, transition:'none' };
+  const cardStyle=(()=>{
+    if(swipeDir==='left')  return {transform:'translateX(-120%) rotate(-15deg)',opacity:0,transition:'all 0.28s ease'};
+    if(swipeDir==='right') return {transform:'translateX(120%) rotate(15deg)', opacity:0,transition:'all 0.28s ease'};
+    if(swipeDir==='up')    return {transform:'translateY(-110%)',opacity:0,transition:'all 0.28s ease'};
+    if(swipeDir==='down')  return {transform:'translateY(110%)', opacity:0,transition:'all 0.28s ease'};
+    if(drag.dragging&&(Math.abs(drag.x)>5||Math.abs(drag.y)>5)){
+      return {transform:`translate(${drag.x}px,${drag.y}px) rotate(${drag.x*0.08}deg)`,transition:'none'};
     }
-    return { transform:'translateX(0) rotate(0deg) translateY(0)', opacity:1, transition:'all 0.2s ease' };
+    return {transform:'translateX(0) rotate(0deg) translateY(0)',opacity:1,transition:'all 0.2s ease'};
   })();
 
-  // Sürükleme rengi ipucu
   const swipeHint = drag.dragging
-    ? drag.x > 40  ? { label:'KAYDET', color:C.accent, opacity: Math.min(Math.abs(drag.x)/80,1) }
-    : drag.x < -40 ? { label:'GEC',    color:C.red,    opacity: Math.min(Math.abs(drag.x)/80,1) }
-    : drag.y < -40 ? { label:'SONRAKI',color:C.blue,   opacity: Math.min(Math.abs(drag.y)/80,1) }
-    : drag.y > 40  ? { label:'ONCEKI', color:C.yellow,  opacity: Math.min(Math.abs(drag.y)/80,1) }
+    ? drag.x>40  ?{label:'KAYDET', color:C.accent, opacity:Math.min(Math.abs(drag.x)/80,1)}
+    : drag.x<-40 ?{label:'GEC',    color:C.red,    opacity:Math.min(Math.abs(drag.x)/80,1)}
+    : drag.y<-40 ?{label:'SONRAKI',color:C.blue,   opacity:Math.min(Math.abs(drag.y)/80,1)}
+    : drag.y>40  ?{label:'ONCEKI', color:C.yellow,  opacity:Math.min(Math.abs(drag.y)/80,1)}
     : null : null;
 
   return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:cfg.bg,transition:'background 0.4s'}}>
-      {/* Üst bar */}
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:cfg.bg,transition:'background 0.5s'}}>
+      {/* Ust bar */}
       <div style={{padding:'12px 16px 8px',flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <span style={{fontSize:14}}>{cfg.icon}</span>
             <span style={{fontSize:11,fontWeight:700,color:cfg.color,letterSpacing:'1px'}}>{cfg.label?.toUpperCase()}</span>
+            {current?.etiket&&<span style={{fontSize:10,background:`${cfg.color}20`,borderRadius:20,padding:'2px 8px',color:cfg.color}}>{current.etiket}</span>}
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:11,color:C.muted}}>{idx+1} / {cards.length}</span>
-            {saved.length > 0 && (
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{fontSize:11,color:C.muted}}>{idx+1}/{cards.length}</span>
+            {saved.length>0&&(
               <button onClick={()=>setShowS(true)}
                 style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'4px 10px',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
                 🔖 {saved.length}
@@ -1620,107 +1719,80 @@ function NewsFeedScreen() {
             )}
           </div>
         </div>
-        {/* Progress bar */}
         <div style={{height:3,background:'#ffffff10',borderRadius:2,overflow:'hidden'}}>
           <div style={{height:'100%',width:`${progress}%`,background:cfg.color,borderRadius:2,transition:'width 0.3s'}}/>
         </div>
       </div>
 
-      {/* Kart alanı */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'8px 16px',position:'relative',overflow:'hidden', touchAction:'none'}}
+      {/* Kart alani */}
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',padding:'8px 16px',position:'relative',overflow:'hidden',touchAction:'none'}}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
-        {/* Swipe hint overlay */}
-        {swipeHint && (
+        {swipeHint&&(
           <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-            fontSize:28,fontWeight:900,color:swipeHint.color,opacity:swipeHint.opacity,
+            fontSize:26,fontWeight:900,color:swipeHint.color,opacity:swipeHint.opacity,
             border:`3px solid ${swipeHint.color}`,borderRadius:12,padding:'8px 20px',
             pointerEvents:'none',zIndex:10,letterSpacing:2}}>
             {swipeHint.label}
           </div>
         )}
 
-        {/* Sonraki kart (arka planda) */}
-        {cards[idx+1] && (
+        {/* Arka kart */}
+        {cards[idx+1]&&(
           <div style={{position:'absolute',inset:'8px 20px',borderRadius:24,
-            background:(tipCfg[cards[idx+1]?.tip]||tipCfg.info).bg,
-            border:`1px solid ${(tipCfg[cards[idx+1]?.tip]||tipCfg.info).color}30`,
-            transform:'scale(0.94) translateY(12px)',zIndex:0}}>
-          </div>
+            background:(tipCfg[cards[idx+1]?.tip]||tipCfg.haber).bg,
+            border:`1px solid ${(tipCfg[cards[idx+1]?.tip]||tipCfg.haber).color}30`,
+            transform:'scale(0.94) translateY(12px)',zIndex:0}}/>
         )}
 
         {/* Ana kart */}
-        <div ref={cardRef} style={{position:'relative',zIndex:1,background:`${cfg.bg}`,
-          border:`1px solid ${cfg.color}50`,borderRadius:24,padding:24,
+        <div ref={cardRef} style={{position:'relative',zIndex:1,background:cfg.bg,
+          border:`1px solid ${cfg.color}50`,borderRadius:24,padding:22,
           boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',cursor:'grab',...cardStyle}}>
 
-          {/* Tarih */}
-          <div style={{fontSize:10,color:C.muted,marginBottom:16,letterSpacing:'1px'}}>
-            {current?.createdAt?.toDate?.()?.toLocaleDateString('tr-TR',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) || ''}
+          <div style={{fontSize:10,color:C.muted,marginBottom:14,letterSpacing:'1px',display:'flex',justifyContent:'space-between'}}>
+            <span>{current?.kaynak||''}</span>
+            <span>{current?.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}</span>
           </div>
 
-          {/* Başlık */}
-          <div style={{fontSize:20,fontWeight:900,color:C.text,lineHeight:'26px',marginBottom:14}}>
+          <div style={{fontSize:19,fontWeight:900,color:C.text,lineHeight:'25px',marginBottom:12}}>
             {current?.baslik}
           </div>
 
-          {/* İçerik */}
-          <div style={{fontSize:14,color:C.dim,lineHeight:'22px',marginBottom:16}}>
+          <div style={{fontSize:13,color:C.dim,lineHeight:'21px',marginBottom:14}}>
             {current?.icerik}
           </div>
 
-          {/* AI analizi */}
-          {current?.analiz && (
-            <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:14,padding:14,marginBottom:14}}>
-              <div style={{fontSize:10,color:cfg.color,fontWeight:700,letterSpacing:'1px',marginBottom:6}}>💡 AI ANALİZİ</div>
-              <div style={{fontSize:13,color:cfg.color,lineHeight:'19px'}}>{current.analiz}</div>
+          {current?.analiz&&(
+            <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:14,padding:12,marginBottom:12}}>
+              <div style={{fontSize:10,color:cfg.color,fontWeight:700,letterSpacing:'1px',marginBottom:4}}>💡 AI ANALİZİ</div>
+              <div style={{fontSize:12,color:cfg.color,lineHeight:'18px'}}>{current.analiz}</div>
             </div>
-          )}
-
-          {/* Etiket */}
-          {current?.etiket && (
-            <div style={{display:'inline-block',background:`${cfg.color}20`,borderRadius:20,
-              padding:'6px 14px',fontSize:13,fontWeight:700,color:cfg.color}}>
-              {current.etiket}
-            </div>
-          )}
-
-          {/* Kaynak */}
-          {current?.kaynak && (
-            <div style={{fontSize:11,color:C.muted,marginTop:10}}>Kaynak: {current.kaynak}</div>
           )}
         </div>
       </div>
 
-      {/* Swipe butonları */}
-      <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:20,padding:'12px 16px 20px',flexShrink:0}}>
+      {/* Butonlar */}
+      <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:16,padding:'10px 16px 20px',flexShrink:0}}>
         <button onClick={goPrev} disabled={idx===0}
-          style={{width:48,height:48,borderRadius:24,background:idx===0?'#111':'#1c1400',border:`2px solid ${idx===0?C.border:C.yellow}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:20,opacity:idx===0?0.3:1}}>
-          ↑
-        </button>
+          style={{width:46,height:46,borderRadius:23,background:idx===0?'#111':C.yellowBg,
+            border:`2px solid ${idx===0?C.border:C.yellow}`,display:'flex',alignItems:'center',
+            justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:18,opacity:idx===0?0.3:1}}>↑</button>
         <button onClick={skipCard}
-          style={{width:58,height:58,borderRadius:29,background:C.redBg,border:`2px solid ${C.red}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:24}}>
-          ✕
-        </button>
+          style={{width:56,height:56,borderRadius:28,background:C.redBg,border:`2px solid ${C.red}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:22}}>✕</button>
         <button onClick={saveCard}
-          style={{width:58,height:58,borderRadius:29,background:C.accentBg,border:`2px solid ${C.accent}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:22}}>
-          🔖
-        </button>
+          style={{width:56,height:56,borderRadius:28,background:C.accentBg,border:`2px solid ${C.accent}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:20}}>🔖</button>
         <button onClick={()=>goNext('up')} disabled={idx>=cards.length-1}
-          style={{width:48,height:48,borderRadius:24,background:idx>=cards.length-1?'#111':'#070d1f',
-            border:`2px solid ${idx>=cards.length-1?C.border:C.blue}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:20,opacity:idx>=cards.length-1?0.3:1}}>
-          ↓
-        </button>
+          style={{width:46,height:46,borderRadius:23,background:idx>=cards.length-1?'#111':C.blueBg,
+            border:`2px solid ${idx>=cards.length-1?C.border:C.blue}`,display:'flex',alignItems:'center',
+            justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:18,opacity:idx>=cards.length-1?0.3:1}}>↓</button>
       </div>
 
-      {/* Swipe ipucu (ilk kart) */}
-      {idx === 0 && cards.length > 0 && (
-        <div style={{textAlign:'center',paddingBottom:8,flexShrink:0}}>
-          <span style={{fontSize:11,color:C.muted}}>← Geç  |  Yukarı/Aşağı Kaydır  |  Kaydet →</span>
+      {idx===0&&cards.length>0&&(
+        <div style={{textAlign:'center',paddingBottom:6,flexShrink:0}}>
+          <span style={{fontSize:10,color:C.muted}}>← Gec  |  Yukari/Asagi  |  → Kaydet</span>
         </div>
       )}
     </div>
