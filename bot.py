@@ -157,8 +157,7 @@ def fetch_kap_api():
             "Accept": "text/html",
         }, timeout=15)
         # Sirket isimlerini bul
-        companies = re.findall(r'([A-Z]{2,6})\s*[-–]\s*([^<
-]{10,80})', res.text)
+        companies = re.findall(r'([A-Z]{2,6})\s*[-\u2013]\s*([^<\n]{10,80})', res.text)
         for code, desc in companies[:10]:
             title = f"{code}: {desc.strip()}"
             items.append({
