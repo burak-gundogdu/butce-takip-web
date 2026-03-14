@@ -2,28 +2,28 @@ name: Otomatik Finans Botu
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 jobs:
   haberleri-cek:
     runs-on: ubuntu-latest
     steps:
-      - name: Kodları Al
-        uses: actions/checkout@v4   # v3 yerine v4 oldu
-        
+      - name: Kodlari Al
+        uses: actions/checkout@v4
+
       - name: Python Kur
-        uses: actions/setup-python@v5 # v4 yerine v5 oldu
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          
-      - name: Gerekli Paketleri Yükle
+
+      - name: Paketleri Yukle
         run: pip install requests
-        
-      - name: Botu Çalıştır
+
+      - name: Botu Calistir
         env:
-          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-          FIREBASE_EMAIL: ${{ secrets.FIREBASE_EMAIL }}
+          FIREBASE_API_KEY:  ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_EMAIL:    ${{ secrets.FIREBASE_EMAIL }}
           FIREBASE_PASSWORD: ${{ secrets.FIREBASE_PASSWORD }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY:      ${{ secrets.GROQ_API_KEY }}
         run: python bot.py

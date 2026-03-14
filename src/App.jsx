@@ -1518,59 +1518,45 @@ function NewsFeedScreen() {
   const [idx, setIdx]           = useState(0);
   const [loading, setLoading]   = useState(true);
   const [swipeDir, setSwipe]    = useState(null);
-  const [saved, setSaved]       = useState([]);
   const [showSaved, setShowS]   = useState(false);
+  const [saved, setSaved]       = useState([]);
   const [drag, setDrag]         = useState({x:0,y:0,dragging:false});
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
-  const cardRef                 = useRef(null);
 
-  // SADECE tip==='haber' olanları cek — admin duyurulari buraya gelmez
+  // SADECE haber tipindekiler
   useEffect(()=>{
     const q = query(collection(db,'announcements'), orderBy('createdAt','desc'), limit(100));
     const unsub = onSnapshot(q, snap=>{
-      const docs = snap.docs
-        .map(d=>({id:d.id,...d.data()}))
-        .filter(d=>d.tip==='haber'); // SADECE haberler
+      const docs = snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>d.tip==='haber');
       setAllCards(docs);
-      // Karistir
-      const shuffled = [...docs].sort(()=>Math.random()-0.5);
-      setCards(shuffled);
+      setCards([...docs].sort(()=>Math.random()-0.5));
       setLoading(false);
     });
     return unsub;
   },[]);
 
   const current = cards[idx];
-  const progress = cards.length?((idx)/cards.length)*100:0;
+  const progress = cards.length ? (idx/cards.length)*100 : 0;
 
   const tipCfg = {
-    haber:  {color:C.purple,bg:'#0f0a1f',icon:'📰',label:'Haber'},
-    info:   {color:C.blue,  bg:'#070d1f',icon:'ℹ️', label:'Bilgi'},
-    uyari:  {color:C.yellow,bg:'#100e00',icon:'⚠️', label:'Uyari'},
+    haber:  {color:C.purple, bg:'#0f0a1f', icon:'📰'},
+    info:   {color:C.blue,   bg:'#070d1f', icon:'ℹ️'},
+    uyari:  {color:C.yellow, bg:'#100e00', icon:'⚠️'},
   };
 
-  const shuffle = () => {
-    const shuffled = [...allCards].sort(()=>Math.random()-0.5);
-    setCards(shuffled);
-    setIdx(0);
-  };
-
-  const goNext=(dir)=>{
+  const goNext=(dir='up')=>{
     if(idx>=cards.length-1) return;
-    setSwipe(dir||'up');
-    setTimeout(()=>{ setIdx(i=>i+1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },280);
+    setSwipe(dir);
+    setTimeout(()=>{ setIdx(i=>i+1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },260);
   };
   const goPrev=()=>{
     if(idx===0) return;
     setSwipe('down');
-    setTimeout(()=>{ setIdx(i=>i-1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },280);
+    setTimeout(()=>{ setIdx(i=>i-1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },260);
   };
-  const saveCard=()=>{
-    if(current&&!saved.find(s=>s.id===current.id)) setSaved(s=>[...s,current]);
-    goNext('right');
-  };
-  const skipCard=()=>goNext('left');
+  const shuffle=()=>{ setCards([...allCards].sort(()=>Math.random()-0.5)); setIdx(0); };
+  const saveCard=()=>{ if(current&&!saved.find(s=>s.id===current.id)) setSaved(s=>[...s,current]); };
 
   const onTouchStart=(e)=>{
     const t=e.touches[0];
@@ -1582,36 +1568,28 @@ function NewsFeedScreen() {
     if(!startRef.current) return;
     e.preventDefault();
     const t=e.touches[0];
-    const dx=t.clientX-startRef.current.x;
     const dy=t.clientY-startRef.current.y;
-    dragRef.current={x:dx,y:dy};
-    setDrag({x:dx,y:dy,dragging:true});
+    dragRef.current={x:0,y:dy};
+    setDrag({x:0,y:dy,dragging:true});
   };
   const onTouchEnd=()=>{
-    const {x,y}=dragRef.current;
-    const thr=55;
-    if(Math.abs(x)>Math.abs(y)){
-      if(x>thr) saveCard();
-      else if(x<-thr) skipCard();
-      else { setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; }
-    } else {
-      if(y<-thr) goNext('up');
-      else if(y>thr) goPrev();
-      else { setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; }
-    }
+    const {y}=dragRef.current;
+    if(y<-50) goNext('up');
+    else if(y>50) goPrev();
+    else { setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; }
     startRef.current=null;
   };
 
   useEffect(()=>{
     const h=(e)=>{
-      if(e.key==='ArrowUp'||e.key==='ArrowRight') goNext('up');
-      if(e.key==='ArrowDown'||e.key==='ArrowLeft') goPrev();
+      if(e.key==='ArrowUp') goNext('up');
+      if(e.key==='ArrowDown') goPrev();
     };
     window.addEventListener('keydown',h);
     return ()=>window.removeEventListener('keydown',h);
   },[idx,cards.length]);
 
-  // Kaydedilenler
+  // Kaydedilenler ekrani
   if(showSaved){
     return (
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -1621,22 +1599,27 @@ function NewsFeedScreen() {
         </div>
         <div style={s.scrollArea}>
           {saved.length===0
-            ? <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>Hic kaydedilen haber yok.<br/>Saga kaydirarak kaydet.</div>
+            ? <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>Hic kaydettigin haber yok.</div>
             : saved.map((ann,i)=>{
                 const cfg=tipCfg[ann.tip]||tipCfg.haber;
                 return (
                   <div key={i} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:14,padding:16,marginBottom:10}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                      <span style={{fontSize:18}}>{cfg.icon}</span>
-                      <span style={{fontWeight:800,fontSize:13,color:cfg.color,flex:1}}>{ann.baslik}</span>
+                    <div style={{display:'flex',gap:8,marginBottom:8}}>
+                      <span style={{fontSize:16}}>{cfg.icon}</span>
+                      <span style={{fontWeight:800,fontSize:13,color:cfg.color,flex:1,lineHeight:'18px'}}>{ann.baslik}</span>
                     </div>
                     <div style={{fontSize:13,color:C.dim,lineHeight:'19px',marginBottom:6}}>{ann.icerik}</div>
-                    {ann.analiz&&<div style={{fontSize:12,color:cfg.color,background:`${cfg.color}15`,borderRadius:8,padding:'6px 10px',marginBottom:6}}>💡 {ann.analiz}</div>}
-                    {ann.etiket&&<div style={{fontSize:11,fontWeight:700,color:cfg.color}}>{ann.etiket}</div>}
-                    <button onClick={()=>setSaved(s=>s.filter((_,j)=>j!==i))}
-                      style={{background:'none',border:`1px solid ${C.border}`,borderRadius:8,padding:'4px 10px',color:C.muted,fontSize:11,cursor:'pointer',marginTop:8}}>
-                      Kaldir
-                    </button>
+                    {ann.analiz&&<div style={{fontSize:12,color:cfg.color,background:`${cfg.color}15`,borderRadius:8,padding:'8px 10px',marginBottom:8}}>💡 {ann.analiz}</div>}
+                    <div style={{display:'flex',gap:8,alignItems:'center',marginTop:4}}>
+                      {ann.url&&<a href={ann.url} target="_blank" rel="noreferrer"
+                        style={{fontSize:11,color:cfg.color,background:`${cfg.color}20`,borderRadius:20,padding:'4px 12px',textDecoration:'none',fontWeight:700}}>
+                        🔗 Kaynaga Git
+                      </a>}
+                      <button onClick={()=>setSaved(s=>s.filter((_,j)=>j!==i))}
+                        style={{fontSize:11,color:C.muted,background:'none',border:`1px solid ${C.border}`,borderRadius:20,padding:'4px 12px',cursor:'pointer'}}>
+                        Kaldir
+                      </button>
+                    </div>
                   </div>
                 );
               })
@@ -1647,7 +1630,7 @@ function NewsFeedScreen() {
   }
 
   if(loading) return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',gap:12}}>
+    <div style={{flex:1,display:'flex',justifyContent:'center',alignItems:'center',flexDirection:'column',gap:12}}>
       <Spinner size={36}/><span style={{color:C.muted,fontSize:13}}>Haberler yukleniyor...</span>
     </div>
   );
@@ -1656,47 +1639,38 @@ function NewsFeedScreen() {
     <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
       <div style={{fontSize:48,marginBottom:12}}>📭</div>
       <div style={{color:C.text,fontWeight:700,fontSize:16,marginBottom:8}}>Haber yok</div>
-      <div style={{color:C.muted,fontSize:13}}>Bot yakinda otomatik haber paylasmaya baslayacak.</div>
+      <div style={{color:C.muted,fontSize:13}}>Bot 10 dakikada bir otomatik haber paylasiyor.</div>
     </div>
   );
 
-  // Sonsuz dongu — sona gelince karistir ve basla
-  if(idx>=cards.length){
-    return (
-      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
-        <div style={{fontSize:56,marginBottom:16}}>🎉</div>
-        <div style={{color:C.text,fontWeight:800,fontSize:18,marginBottom:8}}>Hepsini okudun!</div>
-        <div style={{color:C.muted,fontSize:13,marginBottom:24}}>{cards.length} haber tamamlandi.</div>
-        <button onClick={shuffle} style={{...s.btn,width:'auto',padding:'14px 36px',fontSize:15}}>
-          🔀 Tekrar Baslat
+  if(idx>=cards.length) return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
+      <div style={{fontSize:52,marginBottom:16}}>🎉</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:18,marginBottom:8}}>Hepsini okudun!</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:24}}>{cards.length} haberin tamami.</div>
+      <button onClick={shuffle} style={{...s.btn,width:'auto',padding:'14px 36px'}}>🔀 Tekrar Baslat</button>
+      {saved.length>0&&(
+        <button onClick={()=>setShowS(true)} style={{...s.btnSec,width:'auto',padding:'12px 32px',marginTop:0}}>
+          🔖 Kaydedilenleri Gor ({saved.length})
         </button>
-        {saved.length>0&&(
-          <button onClick={()=>setShowS(true)} style={{...s.btnSec,width:'auto',padding:'12px 32px',marginTop:0}}>
-            🔖 Kaydedilenleri Gor ({saved.length})
-          </button>
-        )}
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
 
   const cfg = tipCfg[current?.tip]||tipCfg.haber;
 
+  // Sadece yukarı/aşağı animasyon
   const cardStyle=(()=>{
-    if(swipeDir==='left')  return {transform:'translateX(-120%) rotate(-15deg)',opacity:0,transition:'all 0.28s ease'};
-    if(swipeDir==='right') return {transform:'translateX(120%) rotate(15deg)', opacity:0,transition:'all 0.28s ease'};
-    if(swipeDir==='up')    return {transform:'translateY(-110%)',opacity:0,transition:'all 0.28s ease'};
-    if(swipeDir==='down')  return {transform:'translateY(110%)', opacity:0,transition:'all 0.28s ease'};
-    if(drag.dragging&&(Math.abs(drag.x)>5||Math.abs(drag.y)>5)){
-      return {transform:`translate(${drag.x}px,${drag.y}px) rotate(${drag.x*0.08}deg)`,transition:'none'};
-    }
-    return {transform:'translateX(0) rotate(0deg) translateY(0)',opacity:1,transition:'all 0.2s ease'};
+    if(swipeDir==='up')   return {transform:'translateY(-110%)',opacity:0,transition:'all 0.26s ease'};
+    if(swipeDir==='down') return {transform:'translateY(110%)', opacity:0,transition:'all 0.26s ease'};
+    if(drag.dragging&&Math.abs(drag.y)>5)
+      return {transform:`translateY(${drag.y}px)`,transition:'none'};
+    return {transform:'translateY(0)',opacity:1,transition:'all 0.2s ease'};
   })();
 
   const swipeHint = drag.dragging
-    ? drag.x>40  ?{label:'KAYDET', color:C.accent, opacity:Math.min(Math.abs(drag.x)/80,1)}
-    : drag.x<-40 ?{label:'GEC',    color:C.red,    opacity:Math.min(Math.abs(drag.x)/80,1)}
-    : drag.y<-40 ?{label:'SONRAKI',color:C.blue,   opacity:Math.min(Math.abs(drag.y)/80,1)}
-    : drag.y>40  ?{label:'ONCEKI', color:C.yellow,  opacity:Math.min(Math.abs(drag.y)/80,1)}
+    ? drag.y<-40 ? {label:'SONRAKI',color:C.blue,  opacity:Math.min(Math.abs(drag.y)/80,1)}
+    : drag.y>40  ? {label:'ONCEKI', color:C.yellow, opacity:Math.min(Math.abs(drag.y)/80,1)}
     : null : null;
 
   return (
@@ -1706,10 +1680,10 @@ function NewsFeedScreen() {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <span style={{fontSize:14}}>{cfg.icon}</span>
-            <span style={{fontSize:11,fontWeight:700,color:cfg.color,letterSpacing:'1px'}}>{cfg.label?.toUpperCase()}</span>
+            <span style={{fontSize:11,fontWeight:700,color:cfg.color,letterSpacing:'1px'}}>HABERLER</span>
             {current?.etiket&&<span style={{fontSize:10,background:`${cfg.color}20`,borderRadius:20,padding:'2px 8px',color:cfg.color}}>{current.etiket}</span>}
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
             <span style={{fontSize:11,color:C.muted}}>{idx+1}/{cards.length}</span>
             {saved.length>0&&(
               <button onClick={()=>setShowS(true)}
@@ -1719,6 +1693,7 @@ function NewsFeedScreen() {
             )}
           </div>
         </div>
+        {/* Progress bar */}
         <div style={{height:3,background:'#ffffff10',borderRadius:2,overflow:'hidden'}}>
           <div style={{height:'100%',width:`${progress}%`,background:cfg.color,borderRadius:2,transition:'width 0.3s'}}/>
         </div>
@@ -1729,8 +1704,8 @@ function NewsFeedScreen() {
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
         {swipeHint&&(
-          <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-            fontSize:26,fontWeight:900,color:swipeHint.color,opacity:swipeHint.opacity,
+          <div style={{position:'absolute',top:'42%',left:'50%',transform:'translate(-50%,-50%)',
+            fontSize:22,fontWeight:900,color:swipeHint.color,opacity:swipeHint.opacity,
             border:`3px solid ${swipeHint.color}`,borderRadius:12,padding:'8px 20px',
             pointerEvents:'none',zIndex:10,letterSpacing:2}}>
             {swipeHint.label}
@@ -1746,53 +1721,75 @@ function NewsFeedScreen() {
         )}
 
         {/* Ana kart */}
-        <div ref={cardRef} style={{position:'relative',zIndex:1,background:cfg.bg,
+        <div style={{position:'relative',zIndex:1,background:cfg.bg,
           border:`1px solid ${cfg.color}50`,borderRadius:24,padding:22,
-          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',cursor:'grab',...cardStyle}}>
+          boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',...cardStyle}}>
 
-          <div style={{fontSize:10,color:C.muted,marginBottom:14,letterSpacing:'1px',display:'flex',justifyContent:'space-between'}}>
-            <span>{current?.kaynak||''}</span>
-            <span>{current?.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}</span>
+          {/* Kaynak + saat */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <span style={{fontSize:11,background:`${cfg.color}20`,borderRadius:20,padding:'3px 10px',color:cfg.color,fontWeight:700}}>
+              {current?.kaynak||'Haber'}
+            </span>
+            <span style={{fontSize:10,color:C.muted}}>
+              {current?.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}
+            </span>
           </div>
 
+          {/* Baslik */}
           <div style={{fontSize:19,fontWeight:900,color:C.text,lineHeight:'25px',marginBottom:12}}>
             {current?.baslik}
           </div>
 
+          {/* Icerik */}
           <div style={{fontSize:13,color:C.dim,lineHeight:'21px',marginBottom:14}}>
             {current?.icerik}
           </div>
 
+          {/* AI analizi */}
           {current?.analiz&&(
-            <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:14,padding:12,marginBottom:12}}>
+            <div style={{background:`${cfg.color}12`,border:`1px solid ${cfg.color}30`,borderRadius:14,padding:12,marginBottom:14}}>
               <div style={{fontSize:10,color:cfg.color,fontWeight:700,letterSpacing:'1px',marginBottom:4}}>💡 AI ANALİZİ</div>
               <div style={{fontSize:12,color:cfg.color,lineHeight:'18px'}}>{current.analiz}</div>
             </div>
           )}
+
+          {/* Kaynak linki */}
+          {current?.url&&(
+            <a href={current.url} target="_blank" rel="noreferrer"
+              style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
+                background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',fontWeight:700}}>
+              🔗 Haberin Tamamini Oku
+            </a>
+          )}
         </div>
       </div>
 
-      {/* Butonlar */}
-      <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:16,padding:'10px 16px 20px',flexShrink:0}}>
+      {/* Navigasyon butonlari - sadece yukari asagi */}
+      <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:24,padding:'12px 16px 20px',flexShrink:0}}>
         <button onClick={goPrev} disabled={idx===0}
-          style={{width:46,height:46,borderRadius:23,background:idx===0?'#111':C.yellowBg,
+          style={{width:52,height:52,borderRadius:26,background:idx===0?'#111':C.yellowBg,
             border:`2px solid ${idx===0?C.border:C.yellow}`,display:'flex',alignItems:'center',
-            justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:18,opacity:idx===0?0.3:1}}>↑</button>
-        <button onClick={skipCard}
-          style={{width:56,height:56,borderRadius:28,background:C.redBg,border:`2px solid ${C.red}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:22}}>✕</button>
+            justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:22,opacity:idx===0?0.3:1}}>
+          ↑
+        </button>
         <button onClick={saveCard}
-          style={{width:56,height:56,borderRadius:28,background:C.accentBg,border:`2px solid ${C.accent}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:20}}>🔖</button>
+          style={{width:52,height:52,borderRadius:26,
+            background:saved.find(s=>s.id===current?.id)?C.accentBg:'#1a1a2e',
+            border:`2px solid ${saved.find(s=>s.id===current?.id)?C.accent:C.border}`,
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:20}}>
+          🔖
+        </button>
         <button onClick={()=>goNext('up')} disabled={idx>=cards.length-1}
-          style={{width:46,height:46,borderRadius:23,background:idx>=cards.length-1?'#111':C.blueBg,
+          style={{width:52,height:52,borderRadius:26,background:idx>=cards.length-1?'#111':C.blueBg,
             border:`2px solid ${idx>=cards.length-1?C.border:C.blue}`,display:'flex',alignItems:'center',
-            justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:18,opacity:idx>=cards.length-1?0.3:1}}>↓</button>
+            justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:22,opacity:idx>=cards.length-1?0.3:1}}>
+          ↓
+        </button>
       </div>
 
       {idx===0&&cards.length>0&&(
-        <div style={{textAlign:'center',paddingBottom:6,flexShrink:0}}>
-          <span style={{fontSize:10,color:C.muted}}>← Gec  |  Yukari/Asagi  |  → Kaydet</span>
+        <div style={{textAlign:'center',paddingBottom:8,flexShrink:0}}>
+          <span style={{fontSize:10,color:C.muted}}>Yukari/Asagi Kaydır  |  🔖 Kaydet  |  🔗 Kaynaga Git</span>
         </div>
       )}
     </div>
