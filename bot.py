@@ -93,86 +93,98 @@ def fetch_rss_direct(name, url, ua_index=0, limit=10):
         return []
 
 def fetch_kap_api():
-    """KAP API - Sirket bildirimleri, RSS yok direkt JSON API var"""
+    """KAP - Kamuyu Aydinlatma Platformu bildirimleri"""
     items = []
-    try:
-        # KAP JSON API endpoint
-        url = "https://www.kap.org.tr/tr/api/disclosure/query/index"
-        payload = {
-            "fromDate": "",
-            "toDate": "",
-            "year": "",
-            "prd": "",
-            "term": "",
-            "ruleType": "",
-            "bdkReview": "",
-            "disclosureClass": "",
-            "index": "",
-            "market": "",
-            "isLate": "",
-            "subjectList": [],
-            "memberTypeList": ["IGS", "YK", "FO"],
-            "fromSrc": "N",
-            "srcCategory": "",
-            "indexList": [],
-            "startFrom": 0,
-            "limit": 20
-        }
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Origin": "https://www.kap.org.tr",
-            "Referer": "https://www.kap.org.tr/tr/",
-        }
-        res = requests.post(url, json=payload, headers=headers, timeout=15)
-        if res.status_code == 200:
+
+    # Endpoint 1: Calistiği bilinen KAP JSON API
+    endpoints = [
+        "https://www.kap.org.tr/tr/api/general/disclosure/query/index",
+        "https://www.kap.org.tr/tr/api/disclosure/query/index",
+        "https://www.kap.org.tr/en/api/general/disclosure/query/index",
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json;charset=UTF-8",
+        "Origin": "https://www.kap.org.tr",
+        "Referer": "https://www.kap.org.tr/tr/bildirim-sorgu/ozet/0",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    payload = {
+        "fromDate": "", "toDate": "", "year": "", "prd": "",
+        "term": "", "ruleType": "", "bdkReview": "",
+        "disclosureClass": "", "index": "", "market": "",
+        "isLate": "", "subjectList": [], "memberTypeList": [],
+        "fromSrc": "N", "srcCategory": "", "indexList": [],
+        "startFrom": 0, "limit": 15
+    }
+
+    for url in endpoints:
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=15)
+            print(f"  [KAP] {url.split('/')[-3]} → HTTP {res.status_code}")
+            if res.status_code != 200:
+                continue
             data = res.json()
-            for item in (data if isinstance(data, list) else data.get("data", []))[:15]:
-                sirket  = item.get("companyName", item.get("title", ""))
-                konu    = item.get("subject", item.get("disclosureClass", ""))
-                ozet    = item.get("summary", item.get("headline", ""))
-                tarih   = item.get("publishDate", "")[:10]
-                doc_id  = item.get("id", item.get("disclosureIndex",""))
-                title   = f"{sirket}: {konu}" if sirket and konu else (sirket or konu or ozet)
+            rows = data if isinstance(data, list) else data.get("data", data.get("content", []))
+            if not rows:
+                print(f"  [KAP] Bos yanit: {str(data)[:100]}")
+                continue
+            for row in rows[:15]:
+                # Farkli field adlarini dene
+                sirket = (row.get("companyName") or row.get("title") or
+                          row.get("stockCode") or row.get("memberCode") or "")
+                konu   = (row.get("disclosureClass") or row.get("subject") or
+                          row.get("disclosureType") or row.get("summary") or "")
+                ozet   = (row.get("headline") or row.get("summary") or
+                          row.get("disclosureDetail") or "")
+                doc_id = (row.get("disclosureIndex") or row.get("id") or
+                          row.get("index") or "")
+                tarih  = str(row.get("publishDate") or row.get("date") or "")[:10]
+
+                title = f"{sirket}: {konu}".strip(": ")
                 if not title or len(title) < 5:
-                    continue
-                kap_url = f"https://www.kap.org.tr/tr/Bildirim/{doc_id}" if doc_id else "https://www.kap.org.tr/tr"
+                    title = ozet[:60] if ozet else "KAP Bildirimi"
+
+                kap_url = (f"https://www.kap.org.tr/tr/Bildirim/{doc_id}"
+                           if doc_id else "https://www.kap.org.tr/tr")
+
                 items.append({
                     "source": "KAP",
                     "title": f"[KAP] {title}",
                     "url": kap_url,
-                    "description": ozet[:150] if ozet else "",
+                    "description": ozet[:150],
                     "hash": title_hash(title + tarih)
                 })
-            print(f"  [KAP API] {len(items)} bildirim")
+
+            print(f"  [KAP API] {len(items)} bildirim alindi")
             return items
-    except Exception as e:
-        print(f"  [KAP API] hata: {e}")
 
-    # Fallback: KAP HTML sayfasini parse et
-    try:
-        res = requests.get("https://www.kap.org.tr/tr/", headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Accept": "text/html",
-        }, timeout=15)
-        # Sirket isimlerini bul
-        companies = re.findall(r'([A-Z]{2,6})\s*[-\u2013]\s*([^<\n]{10,80})', res.text)
-        for code, desc in companies[:10]:
-            title = f"{code}: {desc.strip()}"
-            items.append({
-                "source": "KAP",
-                "title": f"[KAP] {title}",
-                "url": "https://www.kap.org.tr/tr",
-                "description": "",
-                "hash": title_hash(title)
-            })
-        if items:
-            print(f"  [KAP HTML] {len(items)} bildirim")
-    except Exception as e:
-        print(f"  [KAP HTML] hata: {e}")
+        except Exception as e:
+            print(f"  [KAP] {url[-30:]} hata: {e}")
 
-    return items
+    # Son care: KAP RSS alternatif format
+    rss_urls = [
+        "https://www.kap.org.tr/rss/bildirim.rss",
+        "https://www.kap.org.tr/tr/rss",
+    ]
+    for rss_url in rss_urls:
+        try:
+            res = requests.get(rss_url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "*/*"
+            }, timeout=10)
+            print(f"  [KAP RSS] {rss_url.split('/')[-1]} → HTTP {res.status_code}")
+            if res.status_code == 200:
+                parsed = parse_rss_regex(res.text, "KAP", 15)
+                if parsed:
+                    print(f"  [KAP RSS] {len(parsed)} bildirim")
+                    return parsed
+        except Exception as e:
+            print(f"  [KAP RSS] hata: {e}")
+
+    print("  [KAP] Hic bildirim alinamadi")
+    return []
 
 def fetch_all_news():
     all_items = []
