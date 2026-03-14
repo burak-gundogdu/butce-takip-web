@@ -92,6 +92,89 @@ def fetch_rss_direct(name, url, ua_index=0, limit=10):
         print(f"  [{name}] Hata: {type(e).__name__}: {str(e)[:60]}")
         return []
 
+def fetch_kap_api():
+    """KAP API - Sirket bildirimleri, RSS yok direkt JSON API var"""
+    items = []
+    try:
+        # KAP JSON API endpoint
+        url = "https://www.kap.org.tr/tr/api/disclosure/query/index"
+        payload = {
+            "fromDate": "",
+            "toDate": "",
+            "year": "",
+            "prd": "",
+            "term": "",
+            "ruleType": "",
+            "bdkReview": "",
+            "disclosureClass": "",
+            "index": "",
+            "market": "",
+            "isLate": "",
+            "subjectList": [],
+            "memberTypeList": ["IGS", "YK", "FO"],
+            "fromSrc": "N",
+            "srcCategory": "",
+            "indexList": [],
+            "startFrom": 0,
+            "limit": 20
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Origin": "https://www.kap.org.tr",
+            "Referer": "https://www.kap.org.tr/tr/",
+        }
+        res = requests.post(url, json=payload, headers=headers, timeout=15)
+        if res.status_code == 200:
+            data = res.json()
+            for item in (data if isinstance(data, list) else data.get("data", []))[:15]:
+                sirket  = item.get("companyName", item.get("title", ""))
+                konu    = item.get("subject", item.get("disclosureClass", ""))
+                ozet    = item.get("summary", item.get("headline", ""))
+                tarih   = item.get("publishDate", "")[:10]
+                doc_id  = item.get("id", item.get("disclosureIndex",""))
+                title   = f"{sirket}: {konu}" if sirket and konu else (sirket or konu or ozet)
+                if not title or len(title) < 5:
+                    continue
+                kap_url = f"https://www.kap.org.tr/tr/Bildirim/{doc_id}" if doc_id else "https://www.kap.org.tr/tr"
+                items.append({
+                    "source": "KAP",
+                    "title": f"[KAP] {title}",
+                    "url": kap_url,
+                    "description": ozet[:150] if ozet else "",
+                    "hash": title_hash(title + tarih)
+                })
+            print(f"  [KAP API] {len(items)} bildirim")
+            return items
+    except Exception as e:
+        print(f"  [KAP API] hata: {e}")
+
+    # Fallback: KAP HTML sayfasini parse et
+    try:
+        res = requests.get("https://www.kap.org.tr/tr/", headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept": "text/html",
+        }, timeout=15)
+        # Sirket isimlerini bul
+        companies = re.findall(r'([A-Z]{2,6})\s*[-–]\s*([^<
+]{10,80})', res.text)
+        for code, desc in companies[:10]:
+            title = f"{code}: {desc.strip()}"
+            items.append({
+                "source": "KAP",
+                "title": f"[KAP] {title}",
+                "url": "https://www.kap.org.tr/tr",
+                "description": "",
+                "hash": title_hash(title)
+            })
+        if items:
+            print(f"  [KAP HTML] {len(items)} bildirim")
+    except Exception as e:
+        print(f"  [KAP HTML] hata: {e}")
+
+    return items
+
 def fetch_all_news():
     all_items = []
     seen = set()
@@ -104,13 +187,13 @@ def fetch_all_news():
         ("Haberturk",         "https://www.haberturk.com/rss/kategori/ekonomi.xml",         3),
         ("Hurriyet Ekonomi",  "https://www.hurriyet.com.tr/rss/ekonomi",                    0),
         ("Milliyet Ekonomi",  "https://www.milliyet.com.tr/rss/rssNew/ekonomiRss.xml",      1),
-        ("Dunya Gazetesi",    "https://www.dunya.com/rss/anasayfa.xml",                     2),
+        ("Dunya Gazetesi",    "https://www.dunya.com/rss/ekonomi.xml",                     2),
         ("Bloomberg HT",      "https://www.bloomberght.com/rss",                            3),
         ("Para Analiz",       "https://www.paraanaliz.com/feed/",                           0),
-        ("Borsagundem",       "https://www.borsagundem.com/feed",                           1),
-        ("Ekonomist",         "https://ekonomist.com.tr/feed/",                             2),
-        ("Yatirim Finans",    "https://www.yatirimfinans.com/feed/",                        3),
-        ("KAP Bildirimler",   "https://www.kap.org.tr/tr/bildirim-sorgu/ozet/0/rss",        0),
+        ("Borsagundem",       "https://www.borsagundem.com/rss",                           1),
+        ("Haberler.com",      "https://www.haberler.com/ekonomi/rss/",                             2),
+        ("Mynet Ekonomi",     "https://ekonomi.mynet.com/rss/haberler",                        3),
+        # KAP ayri fonksiyonla cekiliyor
     ]
 
     for name, url, ua_idx in sources:
@@ -123,6 +206,13 @@ def fetch_all_news():
                 new_count += 1
         print(f"  [{name}] {new_count} haber")
         time.sleep(0.5)
+
+    # KAP bildirimlerini ayri cek
+    kap_items = fetch_kap_api()
+    for item in kap_items:
+        if item["hash"] not in seen:
+            seen.add(item["hash"])
+            all_items.append(item)
 
     print(f"\n  TOPLAM BENZERSIZ: {len(all_items)} haber")
     return all_items
