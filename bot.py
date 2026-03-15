@@ -253,21 +253,22 @@ Tam {count} farkli konuda haber sec."""
         return []
 
 def enrich_with_images(ai_list, news_items_map):
-    """RSS'de resim yoksa og:image cek"""
+    """Her haber icin gorsel bul - RSS den veya og:image den"""
     enriched = []
     for item in ai_list:
         img = item.get("image","").strip()
-        # Resim yoksa veya gecersizse URL'den cek
-        if not img or not img.startswith('http'):
-            url = item.get("url","")
-            if url:
-                print(f"  Resim cekiliyor: {url[:60]}")
-                img = fetch_og_image(url, timeout=6)
-                if img:
-                    print(f"    Resim bulundu: {img[:60]}")
-        item["image"] = img
+        # Her durumda URL'den cekmeyi dene (RSS gorseli cok kucuk olabilir)
+        url = item.get("url","")
+        if url and (not img or not img.startswith('http') or len(img) < 20):
+            fetched = fetch_og_image(url, timeout=8)
+            if fetched:
+                img = fetched
+                print(f"  Resim: {item.get('baslik','')[:40]} → {img[:50]}")
+        item["image"] = img if img else ""
         enriched.append(item)
-        time.sleep(0.1)
+        time.sleep(0.15)
+    has_img = sum(1 for i in enriched if i.get("image"))
+    print(f"  {has_img}/{len(enriched)} haberde gorsel var")
     return enriched
 
 def save_to_firestore(token, data):

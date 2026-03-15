@@ -5,7 +5,7 @@ import {
   signOut, onAuthStateChanged, updateProfile, getIdToken,
 } from 'firebase/auth';
 import {
-  doc, getDoc, setDoc, onSnapshot,
+  doc, getDoc, setDoc, onSnapshot, updateDoc,
   collection, addDoc, deleteDoc, getDocs, query, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore';
 
@@ -1229,13 +1229,16 @@ function SettingsTab({ data, setData, user }) {
 function useAnnouncements() {
   const [announcements, setAnnouncements] = useState([]);
   useEffect(() => {
+    // Sadece admin duyurulari — haber tipi degil
+    // Bot haberleri bu querye girmiyor, limit sorunu yok
     const q = query(
       collection(db, 'announcements'),
       orderBy('createdAt', 'desc'),
-      limit(10)
+      limit(200)
     );
     const unsub = onSnapshot(q, snap => {
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setAnnouncements(all.filter(a => a.tip !== 'haber'));
     });
     return unsub;
   }, []);
@@ -1574,7 +1577,7 @@ function AdminScreen({ user }) {
 }
 
 // ─── HABER FEED EKRANI ─────────────────────────────────────────────────────
-function NewsFeedScreen() {
+function NewsFeedScreen({ user }) {
   const [allCards, setAllCards] = useState([]);
   const [cards, setCards]       = useState([]);
   const [idx, setIdx]           = useState(0);
@@ -1582,8 +1585,7 @@ function NewsFeedScreen() {
   const [swipeDir, setSwipe]    = useState(null);
   const [showSaved, setShowS]   = useState(false);
   const [saved, setSaved]       = useState([]);
-  const [drag, setDrag]         = useState({x:0,y:0,dragging:false});
-  const [commentNews, setCN]    = useState(null); // {id, baslik}
+  const [commentNews, setCN]    = useState(null);
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
 
@@ -1621,26 +1623,29 @@ function NewsFeedScreen() {
   const shuffle=()=>{ setCards([...allCards].sort(()=>Math.random()-0.5)); setIdx(0); };
   const saveCard=()=>{ if(current&&!saved.find(s=>s.id===current.id)) setSaved(s=>[...s,current]); };
 
+  // Touch navigation - sadece kartın dışındaki alanlarda çalışır
+  // Kart içeriği serbestçe scroll edilebilir
   const onTouchStart=(e)=>{
+    // Kart icindeyse scroll et, disindaysa navigation
+    const cardEl = e.currentTarget.querySelector('[data-card="true"]');
+    if (cardEl && cardEl.contains(e.target)) return; // kart icinde, isleme
     const t=e.touches[0];
     startRef.current={x:t.clientX,y:t.clientY};
     dragRef.current={x:0,y:0};
-    setDrag({x:0,y:0,dragging:true});
   };
   const onTouchMove=(e)=>{
     if(!startRef.current) return;
-    e.preventDefault();
     const t=e.touches[0];
     const dy=t.clientY-startRef.current.y;
     dragRef.current={x:0,y:dy};
-    setDrag({x:0,y:dy,dragging:true});
   };
   const onTouchEnd=()=>{
+    if (!startRef.current) return;
     const {y}=dragRef.current;
-    if(y<-50) goNext('up');
-    else if(y>50) goPrev();
-    else { setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; }
+    if(y<-60) goNext('up');
+    else if(y>60) goPrev();
     startRef.current=null;
+    dragRef.current={x:0,y:0};
   };
 
   useEffect(()=>{
@@ -1729,15 +1734,10 @@ function NewsFeedScreen() {
   const cardStyle=(()=>{
     if(swipeDir==='up')   return {transform:'translateY(-110%)',opacity:0,transition:'all 0.26s ease'};
     if(swipeDir==='down') return {transform:'translateY(110%)', opacity:0,transition:'all 0.26s ease'};
-    if(drag.dragging&&Math.abs(drag.y)>5)
-      return {transform:`translateY(${drag.y}px)`,transition:'none'};
     return {transform:'translateY(0)',opacity:1,transition:'all 0.2s ease'};
   })();
 
-  const swipeHint = drag.dragging
-    ? drag.y<-40 ? {label:'SONRAKI',color:C.blue,  opacity:Math.min(Math.abs(drag.y)/80,1)}
-    : drag.y>40  ? {label:'ONCEKI', color:C.yellow, opacity:Math.min(Math.abs(drag.y)/80,1)}
-    : null : null;
+
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:cfg.bg,transition:'background 0.5s'}}>
@@ -1766,17 +1766,10 @@ function NewsFeedScreen() {
       </div>
 
       {/* Kart alani */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',padding:'8px 16px',position:'relative',overflow:'hidden',touchAction:'none'}}
+      <div style={{flex:1,display:'flex',flexDirection:'column',padding:'8px 16px',position:'relative',overflow:'hidden'}}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
-        {swipeHint&&(
-          <div style={{position:'absolute',top:'42%',left:'50%',transform:'translate(-50%,-50%)',
-            fontSize:22,fontWeight:900,color:swipeHint.color,opacity:swipeHint.opacity,
-            border:`3px solid ${swipeHint.color}`,borderRadius:12,padding:'8px 20px',
-            pointerEvents:'none',zIndex:10,letterSpacing:2}}>
-            {swipeHint.label}
-          </div>
-        )}
+
 
         {/* Arka kart */}
         {cards[idx+1]&&(
@@ -1787,7 +1780,7 @@ function NewsFeedScreen() {
         )}
 
         {/* Ana kart */}
-        <div style={{position:'relative',zIndex:1,background:cfg.bg,flex:1,
+        <div data-card="true" style={{position:'relative',zIndex:1,background:cfg.bg,flex:1,
           border:`1px solid ${cfg.color}50`,borderRadius:24,marginTop:8,
           boxShadow:`0 20px 60px ${cfg.color}20`,userSelect:'none',overflow:'hidden',
           display:'flex',flexDirection:'column',...cardStyle}}>
@@ -1833,28 +1826,26 @@ function NewsFeedScreen() {
               </div>
             )}
 
-            {/* Kaynak linki + yorum butonu */}
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
-              {current?.url&&(
-                <a href={current.url} target="_blank" rel="noreferrer"
-                  style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
-                    background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',fontWeight:700}}>
-                  🔗 Haberin Tamamini Oku
-                </a>
-              )}
-              <button onClick={()=>setCN({id:current?.id,baslik:current?.baslik})}
-                style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:C.dim,
-                  background:C.border,border:'none',borderRadius:20,padding:'6px 14px',cursor:'pointer',fontWeight:600}}>
-                💬 Yorum Yap
-              </button>
-            </div>
+            {/* Kaynak linki */}
+            {current?.url&&(
+              <a href={current.url} target="_blank" rel="noreferrer"
+                style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
+                  background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',
+                  fontWeight:700,marginBottom:12}}>
+                🔗 Haberin Tamamini Oku
+              </a>
+            )}
+            {/* Yorumlar - kart altinda sabit */}
+            {current?.id && (
+              <CommentsSummary newsId={current.id} onOpenFull={()=>setCN({id:current.id,baslik:current.baslik})} />
+            )}
           </div>
         </div>
       </div>
 
       {/* Yorum modali */}
       {commentNews && (
-        <CommentsModal newsId={commentNews.id} newsTitle={commentNews.baslik} onClose={()=>setCN(null)}/>
+        <CommentsModal newsId={commentNews.id} newsTitle={commentNews.baslik} user={user} onClose={()=>setCN(null)}/>
       )}
       {/* Navigasyon butonlari - sadece yukari asagi */}
       <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:24,padding:'12px 16px 20px',flexShrink:0}}>
@@ -1890,156 +1881,581 @@ function NewsFeedScreen() {
 
 
 // ─── BIST HİSSE EKRANI ─────────────────────────────────────────────────────
+// Tüm BIST hisseleri
 const BIST_STOCKS = [
-  {code:'THYAO',name:'Turk Hava Yollari'},{code:'GARAN',name:'Garanti BBVA'},
-  {code:'ASELS',name:'Aselsan'},{code:'EREGL',name:'Eregli Demir Celik'},
-  {code:'BIMAS',name:'BIM Birlesik Magazalar'},{code:'AKBNK',name:'Akbank'},
-  {code:'YKBNK',name:'Yapi ve Kredi Bankasi'},{code:'SAHOL',name:'Sabanci Holding'},
-  {code:'KCHOL',name:'Koc Holding'},{code:'SISE',name:'Sise ve Cam'},
-  {code:'TUPRS',name:'Tupras'},{code:'ARCLK',name:'Arcelik'},
-  {code:'TCELL',name:'Turkcell'},{code:'FROTO',name:'Ford Otosan'},
-  {code:'TOASO',name:'Tofas'},{code:'EKGYO',name:'Emlak Konut GYO'},
-  {code:'ISCTR',name:'Is Bankasi C'},{code:'HALKB',name:'Halkbank'},
-  {code:'VAKBN',name:'Vakifbank'},{code:'PGSUS',name:'Pegasus'},
-  {code:'KOZAL',name:'Koza Altin'},{code:'PETKM',name:'Petkim'},
-  {code:'TAVHL',name:'TAV Havalimanlari'},{code:'TKFEN',name:'Tekfen Holding'},
-  {code:'DOHOL',name:'Dogan Holding'},{code:'MGROS',name:'Migros'},
-  {code:'ULKER',name:'Ulker Biskuvi'},{code:'ENKAI',name:'Enka Insaat'},
-  {code:'OTKAR',name:'Otokar'},{code:'LOGO',name:'Logo Yazilim'},
+  // BIST 30
+  {code:'THYAO',name:'Turk Hava Yollari',sektor:'Ulasim'},
+  {code:'GARAN',name:'Garanti BBVA',sektor:'Banka'},
+  {code:'ASELS',name:'Aselsan',sektor:'Savunma'},
+  {code:'EREGL',name:'Eregli Demir Celik',sektor:'Metal'},
+  {code:'BIMAS',name:'BIM Birlesik Magazalar',sektor:'Perakende'},
+  {code:'AKBNK',name:'Akbank',sektor:'Banka'},
+  {code:'YKBNK',name:'Yapi ve Kredi Bankasi',sektor:'Banka'},
+  {code:'SAHOL',name:'Sabanci Holding',sektor:'Holding'},
+  {code:'KCHOL',name:'Koc Holding',sektor:'Holding'},
+  {code:'SISE',name:'Sise ve Cam',sektor:'Cam'},
+  {code:'TUPRS',name:'Tupras',sektor:'Petrol'},
+  {code:'ARCLK',name:'Arcelik',sektor:'Beyaz Esya'},
+  {code:'TCELL',name:'Turkcell',sektor:'Telekom'},
+  {code:'FROTO',name:'Ford Otosan',sektor:'Otomotiv'},
+  {code:'TOASO',name:'Tofas',sektor:'Otomotiv'},
+  {code:'EKGYO',name:'Emlak Konut GYO',sektor:'GYO'},
+  {code:'ISCTR',name:'Is Bankasi C',sektor:'Banka'},
+  {code:'HALKB',name:'Halkbank',sektor:'Banka'},
+  {code:'VAKBN',name:'Vakifbank',sektor:'Banka'},
+  {code:'PGSUS',name:'Pegasus',sektor:'Ulasim'},
+  {code:'KOZAL',name:'Koza Altin',sektor:'Maden'},
+  {code:'PETKM',name:'Petkim',sektor:'Petrokimya'},
+  {code:'TAVHL',name:'TAV Havalimanlari',sektor:'Ulasim'},
+  {code:'TKFEN',name:'Tekfen Holding',sektor:'Holding'},
+  {code:'DOHOL',name:'Dogan Holding',sektor:'Holding'},
+  {code:'MGROS',name:'Migros',sektor:'Perakende'},
+  {code:'ULKER',name:'Ulker Biskuvi',sektor:'Gida'},
+  {code:'ENKAI',name:'Enka Insaat',sektor:'Insaat'},
+  {code:'OTKAR',name:'Otokar',sektor:'Savunma'},
+  {code:'LOGO',name:'Logo Yazilim',sektor:'Teknoloji'},
+  // Diger BIST hisseleri
+  {code:'AEFES',name:'Anadolu Efes',sektor:'Icecek'},
+  {code:'AGHOL',name:'AG Anadolu Grubu',sektor:'Holding'},
+  {code:'AKGRT',name:'Aksigorta',sektor:'Sigorta'},
+  {code:'ALGYO',name:'Alarko GYO',sektor:'GYO'},
+  {code:'ALKIM',name:'Alkim Kimya',sektor:'Kimya'},
+  {code:'ALYAG',name:'Altin Yunus Cesme',sektor:'Turizm'},
+  {code:'ANELE',name:'Anel Elektrik',sektor:'Enerji'},
+  {code:'ARASE',name:'Aras Kargo',sektor:'Lojistik'},
+  {code:'ARDYZ',name:'ARD Bilisim',sektor:'Teknoloji'},
+  {code:'ARSAN',name:'Arsan Tekstil',sektor:'Tekstil'},
+  {code:'AYCES',name:'Altinyunus',sektor:'Turizm'},
+  {code:'AYGAZ',name:'Aygaz',sektor:'Enerji'},
+  {code:'BAGFS',name:'Bagfas Gubre',sektor:'Kimya'},
+  {code:'BASGZ',name:'Baskent Dogalgaz',sektor:'Enerji'},
+  {code:'BFREN',name:'Bosch Fren',sektor:'Otomotiv'},
+  {code:'BIENY',name:'Bien Yapi',sektor:'Insaat'},
+  {code:'BIGCH',name:'Bigchef',sektor:'Restoran'},
+  {code:'BIZIM',name:'Bizim Toptan',sektor:'Perakende'},
+  {code:'BOBET',name:'Bogazici Beton',sektor:'Insaat'},
+  {code:'BOSSA',name:'Bossa Ticaret',sektor:'Tekstil'},
+  {code:'BRISA',name:'Brisa Bridgestone',sektor:'Otomotiv'},
+  {code:'BRKSN',name:'Berkosan Yalitim',sektor:'Insaat'},
+  {code:'BRYAT',name:'Boy Yatirim',sektor:'Holding'},
+  {code:'BSOKE',name:'Batisoke Cimento',sektor:'Cimento'},
+  {code:'BTCIM',name:'Bati Cimento',sektor:'Cimento'},
+  {code:'BUCIM',name:'Bursa Cimento',sektor:'Cimento'},
+  {code:'BURCE',name:'Burcelik',sektor:'Metal'},
+  {code:'BURVA',name:'Bursa Yatirim',sektor:'Holding'},
+  {code:'CCOLA',name:'Coca-Cola Icecek',sektor:'Icecek'},
+  {code:'CEMAS',name:'Cemas Dokum',sektor:'Metal'},
+  {code:'CEMTS',name:'Cementro',sektor:'Cimento'},
+  {code:'CIMSA',name:'Cimsa Cimento',sektor:'Cimento'},
+  {code:'CLEBI',name:'Celebi Hava Servisi',sektor:'Ulasim'},
+  {code:'CMBTN',name:'Combinator',sektor:'Teknoloji'},
+  {code:'CRFSA',name:'CarrefourSA',sektor:'Perakende'},
+  {code:'CWENE',name:'Cleanworld Enerji',sektor:'Enerji'},
+  {code:'DAPGM',name:'Dap Yatirim',sektor:'GYO'},
+  {code:'DCILC',name:'Dogan Sirketler Grubu',sektor:'Holding'},
+  {code:'DENGE',name:'Denge Yatirim',sektor:'Holding'},
+  {code:'DENTA',name:'Denta Klinik',sektor:'Saglik'},
+  {code:'DERIM',name:'Derim Deri',sektor:'Tekstil'},
+  {code:'DESA',name:'Desa Deri',sektor:'Tekstil'},
+  {code:'DESPC',name:'Despas Insaat',sektor:'Insaat'},
+  {code:'DEVA',name:'Deva Holding',sektor:'Ilac'},
+  {code:'DGATE',name:'Datagate Bilgisayar',sektor:'Teknoloji'},
+  {code:'DGINV',name:'Dogan Gazetecilik',sektor:'Medya'},
+  {code:'DITAS',name:'Ditas Dorse',sektor:'Otomotiv'},
+  {code:'DOGUB',name:'Dogusan Boru',sektor:'Metal'},
+  {code:'DURDO',name:'Duran Dogan Basim',sektor:'Matbaa'},
+  {code:'DYOBY',name:'DYO Boya',sektor:'Kimya'},
+  {code:'DZGYO',name:'Deniz GYO',sektor:'GYO'},
+  {code:'ECILC',name:'Eczacibasi Ilac',sektor:'Ilac'},
+  {code:'ECZYT',name:'Eczacibasi Yatirim',sektor:'Holding'},
+  {code:'EDIP',name:'Edip Gayrimenkul',sektor:'GYO'},
+  {code:'EGEEN',name:'Ege Endustri',sektor:'Metal'},
+  {code:'EGGUB',name:'Ege Gubre',sektor:'Kimya'},
+  {code:'EGPRO',name:'Ege Profil',sektor:'Plastik'},
+  {code:'EGSER',name:'Ege Seramik',sektor:'Seramik'},
+  {code:'EMKEL',name:'Emkel Elektrik',sektor:'Enerji'},
+  {code:'ENJSA',name:'Enerjisa Enerji',sektor:'Enerji'},
+  {code:'EPLAS',name:'Emek Plastik',sektor:'Plastik'},
+  {code:'ERBOS',name:'Erbosan',sektor:'Metal'},
+  {code:'ESCOM',name:'Esas Holding',sektor:'Holding'},
+  {code:'ETILR',name:'Etiler Gida',sektor:'Gida'},
+  {code:'EUHOL',name:'Euro Holding',sektor:'Holding'},
+  {code:'EUPWR',name:'Euro Power',sektor:'Enerji'},
+  {code:'EUREN',name:'Euro Enerji',sektor:'Enerji'},
+  {code:'FENER',name:'Fenerbahce SK',sektor:'Spor'},
+  {code:'FLAP',name:'Flap Kongre',sektor:'Turizm'},
+  {code:'FMIZP',name:'Fazil Mert',sektor:'Metal'},
+  {code:'FONET',name:'Fonet Bilgi',sektor:'Teknoloji'},
+  {code:'FORMT',name:'Formnet',sektor:'Teknoloji'},
+  {code:'FORTE',name:'Forte Yatırım',sektor:'Holding'},
+  {code:'GENTS',name:'Gentaş Genel Metal',sektor:'Metal'},
+  {code:'GEREL',name:'Gersan Elektrik',sektor:'Enerji'},
+  {code:'GLBMD',name:'Global Menkul',sektor:'Finans'},
+  {code:'GLCVY',name:'Golcuk Yatirim',sektor:'Holding'},
+  {code:'GLYHO',name:'Global Yatirim Holding',sektor:'Holding'},
+  {code:'GOKNR',name:'Goknar Yatirim',sektor:'Holding'},
+  {code:'GOLTS',name:'Goltas Cimento',sektor:'Cimento'},
+  {code:'GOZDE',name:'Gozde Girisim',sektor:'Holding'},
+  {code:'GRNYO',name:'Garanti BBVA GYO',sektor:'GYO'},
+  {code:'GRSEL',name:'Gursel Turizm',sektor:'Turizm'},
+  {code:'GSDHO',name:'GSD Holding',sektor:'Holding'},
+  {code:'GSRAY',name:'Galatasaray SK',sektor:'Spor'},
+  {code:'GUBRF',name:'Gubre Fabrikalari',sektor:'Kimya'},
+  {code:'HEKTS',name:'Hektas',sektor:'Kimya'},
+  {code:'HLGYO',name:'Halk GYO',sektor:'GYO'},
+  {code:'HTTBT',name:'Hattat Petrol',sektor:'Petrol'},
+  {code:'HUNER',name:'Huner Enerji',sektor:'Enerji'},
+  {code:'HURGZ',name:'Hurriyet Gazetecilik',sektor:'Medya'},
+  {code:'IEYHO',name:'IE Yatirim',sektor:'Holding'},
+  {code:'IHEVA',name:'Ihlas Ev Aletleri',sektor:'Beyaz Esya'},
+  {code:'IHGZT',name:'Ihlas Gazetecilik',sektor:'Medya'},
+  {code:'IHLAS',name:'Ihlas Holding',sektor:'Holding'},
+  {code:'IHLGM',name:'Ihlas Gayrimenkul',sektor:'GYO'},
+  {code:'IMASM',name:'Ima Metal',sektor:'Metal'},
+  {code:'INDES',name:'Index Grup',sektor:'Teknoloji'},
+  {code:'INFO',name:'Info Yatirim',sektor:'Finans'},
+  {code:'INTEM',name:'Intem Bilgisayar',sektor:'Teknoloji'},
+  {code:'IPEKE',name:'Ipek Enerji',sektor:'Enerji'},
+  {code:'ISATR',name:'Is Bankasi A',sektor:'Banka'},
+  {code:'ISBIR',name:'Is Birlesik Magazalar',sektor:'Perakende'},
+  {code:'ISCTR',name:'Is Bankasi C',sektor:'Banka'},
+  {code:'ISFIN',name:'Is Finansal Kiralama',sektor:'Finans'},
+  {code:'ISGSY',name:'Is GYO',sektor:'GYO'},
+  {code:'ISGYO',name:'Is Gayrimenkul Yatirim',sektor:'GYO'},
+  {code:'ISKPL',name:'Is Kuleleri',sektor:'GYO'},
+  {code:'ISMEN',name:'Is Menkul',sektor:'Finans'},
+  {code:'ISYAT',name:'Is Yatirim',sektor:'Finans'},
+  {code:'ITTFH',name:'ITT Fayda',sektor:'Teknoloji'},
+  {code:'IZINV',name:'Izmir Inversiones',sektor:'Holding'},
+  {code:'JANTS',name:'Jantsa',sektor:'Otomotiv'},
+  {code:'KAREL',name:'Karel Elektronik',sektor:'Teknoloji'},
+  {code:'KARTN',name:'Kartonsan',sektor:'Kagit'},
+  {code:'KATMR',name:'Katmer Araclar',sektor:'Otomotiv'},
+  {code:'KAYSE',name:'Kayseri Seker',sektor:'Gida'},
+  {code:'KCAER',name:'Koc ve Enerji',sektor:'Enerji'},
+  {code:'KENT',name:'Kent Gida',sektor:'Gida'},
+  {code:'KERVN',name:'Kervan Gida',sektor:'Gida'},
+  {code:'KERVT',name:'Kervan Tekstil',sektor:'Tekstil'},
+  {code:'KLRHO',name:'Kilronan Holding',sektor:'Holding'},
+  {code:'KNFRT',name:'Konfrut Gida',sektor:'Gida'},
+  {code:'KONTR',name:'Kontrolmatik',sektor:'Teknoloji'},
+  {code:'KONYA',name:'Konya Cimento',sektor:'Cimento'},
+  {code:'KOPOL',name:'Koc Polisaj',sektor:'Kimya'},
+  {code:'KORDS',name:'Kordsa',sektor:'Tekstil'},
+  {code:'KOZAA',name:'Koza Anadolu Metal',sektor:'Maden'},
+  {code:'KRDMD',name:'Kardemir D',sektor:'Metal'},
+  {code:'KRSTL',name:'Kristal Kola',sektor:'Icecek'},
+  {code:'KRTEK',name:'Karsu Tekstil',sektor:'Tekstil'},
+  {code:'KRVGD',name:'Karavan Gida',sektor:'Gida'},
+  {code:'KUTPO',name:'Kutahya Porselen',sektor:'Seramik'},
+  {code:'LKMNH',name:'Lokman Hekim',sektor:'Saglik'},
+  {code:'LRSHO',name:'Loryma Resort',sektor:'Turizm'},
+  {code:'LUKSK',name:'Luks Kadife',sektor:'Tekstil'},
+  {code:'MAALT',name:'Marmaris Altinyunus',sektor:'Turizm'},
+  {code:'MACKO',name:'Mackolik',sektor:'Teknoloji'},
+  {code:'MARTI',name:'Marti Otel',sektor:'Turizm'},
+  {code:'MAVI',name:'Mavi Giyim',sektor:'Tekstil'},
+  {code:'MEDTR',name:'Meditera Tibbi',sektor:'Saglik'},
+  {code:'MEGAP',name:'Mega Polietilen',sektor:'Plastik'},
+  {code:'MEPET',name:'Mepet Petrol',sektor:'Petrol'},
+  {code:'MERCN',name:'Mercan Kimya',sektor:'Kimya'},
+  {code:'MERIT',name:'Merit Turizm',sektor:'Turizm'},
+  {code:'MERKO',name:'Merko Gida',sektor:'Gida'},
+  {code:'METRO',name:'Metro Holding',sektor:'Holding'},
+  {code:'MIPAZ',name:'Milpa Ticari',sektor:'Perakende'},
+  {code:'MNDRS',name:'Menderes Tekstil',sektor:'Tekstil'},
+  {code:'MPARK',name:'MLP Saglik',sektor:'Saglik'},
+  {code:'MRGYO',name:'Margun GYO',sektor:'GYO'},
+  {code:'MTRKS',name:'Metriks',sektor:'Teknoloji'},
+  {code:'NATEN',name:'Naturel Enerji',sektor:'Enerji'},
+  {code:'NETAS',name:'Netas Telekomunikasyon',sektor:'Telekom'},
+  {code:'NTHOL',name:'Net Holding',sektor:'Holding'},
+  {code:'NUGYO',name:'Nurol GYO',sektor:'GYO'},
+  {code:'NUHCM',name:'Nuh Cimento',sektor:'Cimento'},
+  {code:'OBASE',name:'Obase Bilgisayar',sektor:'Teknoloji'},
+  {code:'ODAS',name:'Odas Elektrik',sektor:'Enerji'},
+  {code:'ONCSM',name:'Oncu Yatirim',sektor:'Holding'},
+  {code:'ORCAY',name:'Orcay Ortaklik',sektor:'Holding'},
+  {code:'ORGE',name:'Orge Enerji',sektor:'Enerji'},
+  {code:'ORMA',name:'Orma Orman',sektor:'Agac'},
+  {code:'OSMEN',name:'Osmanli Menkul',sektor:'Finans'},
+  {code:'OYAYO',name:'Oyak Yatirim',sektor:'Finans'},
+  {code:'OYLUM',name:'Oylum Sinai',sektor:'Gida'},
+  {code:'OZGYO',name:'Ozak GYO',sektor:'GYO'},
+  {code:'OZKGY',name:'Ozak Gayrimenkul',sektor:'GYO'},
+  {code:'PAGYO',name:'Pera GYO',sektor:'GYO'},
+  {code:'PAMEL',name:'Pan Elektronik',sektor:'Elektronik'},
+  {code:'PAPIL',name:'Paperwork',sektor:'Kagit'},
+  {code:'PCILT',name:'PC Istanbul',sektor:'Teknoloji'},
+  {code:'PEHOL',name:'Peker Holding',sektor:'Holding'},
+  {code:'PETUN',name:'Pinar Et ve Un',sektor:'Gida'},
+  {code:'PFKPR',name:'Profilo Holding',sektor:'Holding'},
+  {code:'PNSUT',name:'Pinar Sut',sektor:'Gida'},
+  {code:'POLHO',name:'Polisan Holding',sektor:'Kimya'},
+  {code:'POLTK',name:'Politika Yatirim',sektor:'Holding'},
+  {code:'PRZMA',name:'Prizma Press',sektor:'Matbaa'},
+  {code:'QNBFL',name:'QNB Finansleasing',sektor:'Finans'},
+  {code:'QUAGR',name:'QUA Granite',sektor:'Seramik'},
+  {code:'RAYSG',name:'Ray Sigorta',sektor:'Sigorta'},
+  {code:'RGYAS',name:'Reysas GYO',sektor:'GYO'},
+  {code:'RODRG',name:'Rodriguez Garments',sektor:'Tekstil'},
+  {code:'ROYAL',name:'Royal Hali',sektor:'Tekstil'},
+  {code:'RTALB',name:'RTA Laboratuvarlari',sektor:'Saglik'},
+  {code:'RUBNS',name:'Rubenis Tekstil',sektor:'Tekstil'},
+  {code:'RYGYO',name:'Reysas Lojistik GYO',sektor:'GYO'},
+  {code:'RYSAS',name:'Reysas Lojistik',sektor:'Lojistik'},
+  {code:'SARKY',name:'Sarkuysan',sektor:'Metal'},
+  {code:'SAYAS',name:'Say Reklamcilik',sektor:'Medya'},
+  {code:'SDTTR',name:'SDT Uzay',sektor:'Savunma'},
+  {code:'SELEC',name:'Selcuk Ecza',sektor:'Ilac'},
+  {code:'SELGD',name:'Selva Gida',sektor:'Gida'},
+  {code:'SEMAS',name:'Sema Pnomatik',sektor:'Makine'},
+  {code:'SEYKM',name:'Seydisehir Aluminyum',sektor:'Metal'},
+  {code:'SILVR',name:'Silver Yatirim',sektor:'Maden'},
+  {code:'SKBNK',name:'Sekerbank',sektor:'Banka'},
+  {code:'SKYMD',name:'Sky Medya',sektor:'Medya'},
+  {code:'SMART',name:'Smart Gunes',sektor:'Enerji'},
+  {code:'SNGYO',name:'Sinpas GYO',sektor:'GYO'},
+  {code:'SNICA',name:'Sanica Boru',sektor:'Metal'},
+  {code:'SNKRN',name:'Sankrono Moda',sektor:'Tekstil'},
+  {code:'SODSN',name:'Soda Sanayii',sektor:'Kimya'},
+  {code:'SONME',name:'Sonmez Pamuklu',sektor:'Tekstil'},
+  {code:'SRVGY',name:'Servet GYO',sektor:'GYO'},
+  {code:'SUWEN',name:'Suwen Ic Giyim',sektor:'Tekstil'},
+  {code:'TABGD',name:'TAB Gida',sektor:'Restoran'},
+  {code:'TATGD',name:'Tat Gida',sektor:'Gida'},
+  {code:'TBORG',name:'Turk Tuborg',sektor:'Icecek'},
+  {code:'TGSAS',name:'TGS Dis Ticaret',sektor:'Holding'},
+  {code:'TKURU',name:'Turk Kurulus',sektor:'Tekstil'},
+  {code:'TLMAN',name:'Trabzonspor',sektor:'Spor'},
+  {code:'TMPOL',name:'TMO Polipropilen',sektor:'Plastik'},
+  {code:'TMSN',name:'Tumosan Motor',sektor:'Makine'},
+  {code:'TNZTP',name:'Tanzi Tekstil Pruva',sektor:'Tekstil'},
+  {code:'TOASO',name:'Tofas',sektor:'Otomotiv'},
+  {code:'TRCAS',name:'Turcas Petrol',sektor:'Petrol'},
+  {code:'TRGYO',name:'Torunlar GYO',sektor:'GYO'},
+  {code:'TRILC',name:'Trilyum Girisim',sektor:'Teknoloji'},
+  {code:'TSGYO',name:'TSG GYO',sektor:'GYO'},
+  {code:'TSKB',name:'TSKB',sektor:'Banka'},
+  {code:'TSPOR',name:'Trabzonspor Sportif',sektor:'Spor'},
+  {code:'TTKOM',name:'Turk Telekomunikasyon',sektor:'Telekom'},
+  {code:'TTRAK',name:'Turk Traktor',sektor:'Makine'},
+  {code:'TUCLK',name:'Tugra Celik',sektor:'Metal'},
+  {code:'TUKAS',name:'Tukas',sektor:'Gida'},
+  {code:'TUREX',name:'Tureks Turizm',sektor:'Turizm'},
+  {code:'TURGG',name:'Turk Sigorta',sektor:'Sigorta'},
+  {code:'TZNTR',name:'Tezsan Elektrik',sektor:'Elektronik'},
+  {code:'ULUUN',name:'Ulupinar Un',sektor:'Gida'},
+  {code:'ULUSE',name:'Ulusoy Elektrik',sektor:'Enerji'},
+  {code:'ULUSY',name:'Ulusoy Sanayi',sektor:'Holding'},
+  {code:'UMPAS',name:'Umpas Holding',sektor:'Holding'},
+  {code:'UNLU',name:'Unlu Tekstil',sektor:'Tekstil'},
+  {code:'USDTR',name:'USD Tekstil',sektor:'Tekstil'},
+  {code:'VAKFN',name:'Vakif Finansal',sektor:'Finans'},
+  {code:'VAKKO',name:'Vakko Tekstil',sektor:'Tekstil'},
+  {code:'VANGD',name:'Van Gol Gida',sektor:'Gida'},
+  {code:'VBTYZ',name:'VBT Yazilim',sektor:'Teknoloji'},
+  {code:'VERTU',name:'Vertu Yatirim',sektor:'Holding'},
+  {code:'VESBE',name:'Vestel Beyaz Esya',sektor:'Beyaz Esya'},
+  {code:'VESTL',name:'Vestel',sektor:'Elektronik'},
+  {code:'VKFYO',name:'Vakif GYO',sektor:'GYO'},
+  {code:'VKGYO',name:'Vakif Gayrimenkul',sektor:'GYO'},
+  {code:'VRGYO',name:'Varlik GYO',sektor:'GYO'},
+  {code:'YAPRK',name:'Yaprak Sut',sektor:'Gida'},
+  {code:'YATAS',name:'Yatas',sektor:'Mobilya'},
+  {code:'YAYLA',name:'Yayla Agro Gida',sektor:'Gida'},
+  {code:'YBTKS',name:'Yibiteks Tekstil',sektor:'Tekstil'},
+  {code:'YGYO',name:'Yeni Gimat GYO',sektor:'GYO'},
+  {code:'YKGYO',name:'Yapi Kredi GYO',sektor:'GYO'},
+  {code:'YKSLN',name:'Yukselis Holding',sektor:'Holding'},
+  {code:'YUNSA',name:'Yunsa',sektor:'Tekstil'},
+  {code:'ZOREN',name:'Zorlu Enerji',sektor:'Enerji'},
+  {code:'ZRGYO',name:'Ziraat GYO',sektor:'GYO'},
 ];
 
-function StocksScreen({ data, setData }) {
-  const [prices, setPrices]   = useState({});
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch]   = useState('');
-  const [tab, setTab]         = useState('tumü'); // 'tumü' | 'favoriler'
-  const favs = data.settings?.favStocks || [];
+// Toplu fiyat cekme - /api/prices endpoint
+async function fetchBulkPrices(codes) {
+  const tickers = codes.map(c => c.includes('.') ? c : `${c}.IS`).join(',');
+  const res = await fetch('/api/prices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tickers }),
+  });
+  const data = await res.json();
+  const result = {};
+  for (const [sym, info] of Object.entries(data.prices || {})) {
+    const code = sym.replace('.IS','');
+    result[code] = info;
+  }
+  return result;
+}
 
-  const filtered = BIST_STOCKS.filter(s =>
-    s.code.toLowerCase().includes(search.toLowerCase()) ||
-    s.name.toLowerCase().includes(search.toLowerCase())
-  );
-  const displayed = tab === 'favoriler' ? filtered.filter(s => favs.includes(s.code)) : filtered;
+function StocksScreen({ data, setData }) {
+  const [prices, setPrices]     = useState({});
+  const [loading, setLoading]   = useState(false);
+  const [loadingAll, setLA]     = useState(false);
+  const [search, setSearch]     = useState('');
+  const [tab, setTab]           = useState('tumuSorted');
+  const [lastUpdate, setLU]     = useState(null);
+  const favs = data.settings?.favStocks || [];
 
   const toggleFav = (code) => {
     const newFavs = favs.includes(code) ? favs.filter(c => c !== code) : [...favs, code];
     setData(d => ({...d, settings: {...d.settings, favStocks: newFavs}}));
   };
 
-  const loadPrices = async (codes) => {
+  // Fiyatları yukle - toplu olarak, BIST 30 once
+  const loadPrices = async (priority = false) => {
+    if (loading || loadingAll) return;
     setLoading(true);
-    const newPrices = {...prices};
-    for (const code of codes) {
-      try {
-        const p = await yahooPrice(`${code}.IS`);
-        if (p) newPrices[code] = p;
-      } catch {}
-      await new Promise(r => setTimeout(r, 100));
-    }
-    setPrices(newPrices);
+
+    // Bist30 + favoriler once
+    const bist30 = BIST_STOCKS.slice(0,30).map(s=>s.code);
+    const firstBatch = [...new Set([...favs, ...bist30])].slice(0, 50);
+    try {
+      const p1 = await fetchBulkPrices(firstBatch);
+      setPrices(prev => ({...prev, ...p1}));
+    } catch(e) { console.error(e); }
     setLoading(false);
+    setLU(new Date());
+
+    if (!priority) {
+      // Kalanları arka planda yükle - 50'lik gruplar halinde
+      setLA(true);
+      const remaining = BIST_STOCKS.slice(30).map(s=>s.code).filter(c => !firstBatch.includes(c));
+      for (let i = 0; i < remaining.length; i += 50) {
+        const batch = remaining.slice(i, i+50);
+        try {
+          const p = await fetchBulkPrices(batch);
+          setPrices(prev => ({...prev, ...p}));
+        } catch {}
+        await new Promise(r => setTimeout(r, 500));
+      }
+      setLA(false);
+      setLU(new Date());
+    }
   };
 
-  useEffect(() => {
-    if (favs.length > 0) loadPrices(favs);
-  }, []);
+  // Ekrana girilince otomatik yukle
+  useEffect(() => { loadPrices(); }, []);
+
+  // Filtrelenmiş liste
+  const filtered = BIST_STOCKS.filter(s =>
+    !search ||
+    s.code.toLowerCase().includes(search.toLowerCase()) ||
+    s.name.toLowerCase().includes(search.toLowerCase()) ||
+    s.sektor.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Sekmeye gore sirala
+  const displayed = (() => {
+    let list = tab === 'favoriler' ? filtered.filter(s => favs.includes(s.code)) : filtered;
+    if (tab === 'yukselenler') list = list.filter(s => (prices[s.code]?.change||0) > 0).sort((a,b) => (prices[b.code]?.change||0) - (prices[a.code]?.change||0));
+    if (tab === 'dusenler')    list = list.filter(s => (prices[s.code]?.change||0) < 0).sort((a,b) => (prices[a.code]?.change||0) - (prices[b.code]?.change||0));
+    return list;
+  })();
+
+  const loadedCount = Object.keys(prices).length;
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      {/* Baslik */}
-      <div style={{padding:'12px 16px 8px',background:'#0D1020',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-          <span style={{fontWeight:800,fontSize:14,color:C.text}}>BIST Hisseleri</span>
-          <button onClick={()=>loadPrices(displayed.slice(0,15).map(s=>s.code))}
-            disabled={loading}
-            style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'5px 12px',
-              color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
-            {loading?<Spinner size={12}/>:null} Fiyat Guncelle
+      {/* Header */}
+      <div style={{padding:'10px 16px 8px',background:'#0D1020',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div>
+            <span style={{fontWeight:800,fontSize:14,color:C.text}}>BIST Hisseleri</span>
+            <span style={{fontSize:10,color:C.muted,marginLeft:8}}>
+              {loadedCount}/{BIST_STOCKS.length} fiyat
+              {loadingAll && <span style={{color:C.accent}}> (yukleniyor...)</span>}
+            </span>
+          </div>
+          <button onClick={()=>loadPrices(true)} disabled={loading||loadingAll}
+            style={{background:loading||loadingAll?C.border:C.accentBg,border:`1px solid ${loading||loadingAll?C.border:C.accent}40`,
+              borderRadius:20,padding:'5px 12px',color:loading||loadingAll?C.muted:C.accent,
+              fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+            {loading?<Spinner size={12} color={C.accent}/>:'↺'} Guncelle
           </button>
         </div>
+        {lastUpdate && (
+          <div style={{fontSize:10,color:C.muted,marginBottom:6}}>
+            Son güncelleme: {lastUpdate.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}
+          </div>
+        )}
         {/* Arama */}
-        <input style={{...s.input,marginBottom:8}} placeholder="Hisse ara... (THYAO, Garanti)"
+        <input style={{...s.input,marginBottom:8,padding:'9px 12px'}}
+          placeholder="Hisse, şirket veya sektör ara..."
           value={search} onChange={e=>setSearch(e.target.value)}/>
-        {/* Tab */}
-        <div style={{display:'flex',background:C.card,borderRadius:10,padding:3,gap:3}}>
-          {['tumü','favoriler'].map(t=>(
-            <button key={t} onClick={()=>setTab(t)}
-              style={{flex:1,padding:'7px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:12,
-                background:tab===t?C.accent:'transparent',color:tab===t?'#0A0E1A':C.muted}}>
-              {t==='tumü'?`Tum Hisseler (${BIST_STOCKS.length})`:`⭐ Favoriler (${favs.length})`}
+        {/* Sekmeler */}
+        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
+          {[
+            {id:'tumuSorted',l:`Tümü (${BIST_STOCKS.length})`},
+            {id:'favoriler', l:`⭐ (${favs.length})`},
+            {id:'yukselenler',l:'📈 Yükselenler'},
+            {id:'dusenler',  l:'📉 Düşenler'},
+          ].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{padding:'6px 12px',border:'none',borderRadius:20,cursor:'pointer',fontWeight:700,
+                fontSize:11,whiteSpace:'nowrap',flexShrink:0,
+                background:tab===t.id?C.accent:C.border,
+                color:tab===t.id?'#0A0E1A':C.muted}}>
+              {t.l}
             </button>
           ))}
         </div>
       </div>
 
       {/* Liste */}
-      <div style={s.scrollArea}>
+      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
         {tab==='favoriler' && favs.length===0 && (
-          <div style={{textAlign:'center',padding:'40px 16px',color:C.muted}}>
-            <div style={{fontSize:40,marginBottom:12}}>⭐</div>
-            <div style={{fontWeight:700,color:C.text,marginBottom:6}}>Favori hisse yok</div>
-            <div style={{fontSize:13}}>Tum Hisseler sekmesinden yildiza tikla</div>
+          <div style={{textAlign:'center',padding:'40px 0',color:C.muted}}>
+            <div style={{fontSize:36,marginBottom:8}}>⭐</div>
+            <div style={{fontWeight:700,color:C.text,marginBottom:4}}>Favori hisse yok</div>
+            <div style={{fontSize:12}}>Hissenin yanındaki ⭐ ye tıkla</div>
+          </div>
+        )}
+        {(tab==='yukselenler'||tab==='dusenler') && displayed.length===0 && (
+          <div style={{textAlign:'center',padding:'32px 0',color:C.muted}}>
+            <div style={{fontSize:13}}>Fiyat verisi yükleniyor...</div>
           </div>
         )}
         {displayed.map(stock => {
-          const price = prices[stock.code];
-          const isFav = favs.includes(stock.code);
+          const info   = prices[stock.code];
+          const price  = info?.price;
+          const chg    = info?.change;
+          const isFav  = favs.includes(stock.code);
+          const isUp   = chg > 0;
+          const isDown = chg < 0;
           return (
-            <div key={stock.code} style={{display:'flex',alignItems:'center',padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
-              <div style={{flex:1}}>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div key={stock.code} style={{display:'flex',alignItems:'center',padding:'10px 0',
+              borderBottom:`1px solid ${C.border}`}}>
+              {/* Sol: kod + isim + sektör */}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <span style={{fontWeight:800,fontSize:14,color:C.text}}>{stock.code}</span>
-                  {isFav && <span style={{fontSize:10,color:C.yellow}}>⭐</span>}
+                  {isFav && <span style={{fontSize:9,color:C.yellow}}>⭐</span>}
+                  <span style={{fontSize:9,color:C.muted,background:C.border,borderRadius:20,
+                    padding:'1px 6px'}}>{stock.sektor}</span>
                 </div>
-                <div style={{fontSize:11,color:C.muted,marginTop:2}}>{stock.name}</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:1,overflow:'hidden',
+                  textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{stock.name}</div>
               </div>
-              <div style={{textAlign:'right',marginRight:12}}>
-                {price
-                  ? <div style={{fontWeight:800,fontSize:15,color:C.accent}}>{fmtD(price)} ₺</div>
-                  : <div style={{fontSize:12,color:C.muted}}>—</div>
-                }
+              {/* Sag: fiyat + degisim */}
+              <div style={{textAlign:'right',marginRight:10,minWidth:80}}>
+                {price != null ? (
+                  <>
+                    <div style={{fontWeight:800,fontSize:15,color:C.text}}>{fmtD(price)} ₺</div>
+                    {chg != null && (
+                      <div style={{fontSize:11,fontWeight:700,
+                        color:isUp?C.accent:isDown?C.red:C.muted}}>
+                        {isUp?'▲':'▼'} %{Math.abs(chg).toFixed(2)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{display:'flex',justifyContent:'flex-end'}}>
+                    {loading ? <Spinner size={14}/> : <span style={{color:C.border,fontSize:14}}>—</span>}
+                  </div>
+                )}
               </div>
+              {/* Favori butonu */}
               <button onClick={()=>toggleFav(stock.code)}
-                style={{background:'none',border:`1px solid ${isFav?C.yellow:C.border}`,borderRadius:20,
-                  padding:'5px 10px',cursor:'pointer',fontSize:13,color:isFav?C.yellow:C.muted}}>
+                style={{background:'none',border:`1px solid ${isFav?C.yellow:C.border}`,
+                  borderRadius:20,padding:'5px 8px',cursor:'pointer',
+                  fontSize:13,color:isFav?C.yellow:C.muted,flexShrink:0}}>
                 {isFav?'⭐':'☆'}
               </button>
             </div>
           );
         })}
+        {displayed.length > 0 && (
+          <div style={{textAlign:'center',padding:'16px 0',color:C.muted,fontSize:11}}>
+            {displayed.length} hisse gösteriliyor
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ─── HABER YORUMLARI ────────────────────────────────────────────────────────
-function CommentsModal({ newsId, newsTitle, onClose }) {
+// Kucuk yorum ozeti - kart altinda sabit gorunsun
+function CommentsSummary({ newsId, onOpenFull }) {
   const [comments, setComments] = useState([]);
-  const [name, setName]         = useState('');
+  useEffect(() => {
+    if (!newsId) return;
+    const q = query(collection(db,'comments'), orderBy('createdAt','desc'), limit(100));
+    const unsub = onSnapshot(q, snap => {
+      setComments(snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.newsId===newsId));
+    });
+    return unsub;
+  }, [newsId]);
+  if (comments.length === 0) return (
+    <button onClick={onOpenFull}
+      style={{width:'100%',background:'transparent',border:`1px dashed ${C.border}`,borderRadius:10,
+        padding:'8px',color:C.muted,fontSize:12,cursor:'pointer',textAlign:'center'}}>
+      💬 Ilk yorumu sen yap!
+    </button>
+  );
+  return (
+    <div style={{borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <span style={{fontSize:11,color:C.muted,fontWeight:700}}>💬 {comments.length} YORUM</span>
+        <button onClick={onOpenFull}
+          style={{background:'none',border:'none',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+          Tumunu Gor →
+        </button>
+      </div>
+      {comments.slice(0,2).map(c => (
+        <div key={c.id} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:5}}>
+          <div style={{width:6,height:6,borderRadius:3,background:C.accent,marginTop:5,flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <span style={{fontWeight:700,fontSize:11,color:C.accent}}>
+              {c.name}
+              {c.isOnline && <span style={{display:'inline-block',width:5,height:5,borderRadius:3,background:'#22c55e',marginLeft:4}}/>}
+            </span>
+            <span style={{fontSize:11,color:C.dim,marginLeft:5}}>{c.text?.slice(0,60)}{c.text?.length>60?'...':''}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CommentsModal({ newsId, newsTitle, user, onClose }) {
+  const [comments, setComments] = useState([]);
   const [text, setText]         = useState('');
   const [sending, setSending]   = useState(false);
+  const userName = user?.displayName || user?.email?.split('@')[0] || 'Anonim';
+  const userId   = user?.uid || '';
+  const bottomRef = useRef(null);
 
   useEffect(() => {
     if (!newsId) return;
-    const q = query(
-      collection(db, 'comments'),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
+    const q = query(collection(db,'comments'), orderBy('createdAt','asc'), limit(100));
     const unsub = onSnapshot(q, snap => {
-      const all = snap.docs.map(d => ({id:d.id,...d.data()}));
-      setComments(all.filter(c => c.newsId === newsId));
+      setComments(snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.newsId===newsId));
     });
     return unsub;
   }, [newsId]);
 
+  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:'smooth'}); }, [comments]);
+
+  // Kullanici acik oldugunda online isle
+  useEffect(() => {
+    if (!newsId || !userId) return;
+    const ref = doc(db, 'presence', userId);
+    setDoc(ref, { online: true, newsId, updatedAt: serverTimestamp() }, { merge: true }).catch(()=>{});
+    return () => { setDoc(ref, { online: false }, { merge: true }).catch(()=>{}); };
+  }, [newsId, userId]);
+
   const submit = async () => {
-    if (!name.trim() || !text.trim()) return alert('Ad ve yorum gerekli');
+    if (!text.trim()) return;
     setSending(true);
     try {
       await addDoc(collection(db, 'comments'), {
         newsId,
-        name: name.trim().slice(0,30),
+        name: userName,
+        userId,
         text: text.trim().slice(0,300),
         createdAt: serverTimestamp(),
       });
@@ -2049,48 +2465,63 @@ function CommentsModal({ newsId, newsTitle, onClose }) {
   };
 
   return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
-      <div style={{background:C.card,borderRadius:'20px 20px 0 0',border:`1px solid ${C.border}`,maxHeight:'75vh',display:'flex',flexDirection:'column'}}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+      <div style={{background:C.card,borderRadius:'20px 20px 0 0',border:`1px solid ${C.border}`,maxHeight:'80vh',display:'flex',flexDirection:'column'}}>
         {/* Header */}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 20px',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 20px',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
           <div>
-            <div style={{fontWeight:800,fontSize:14,color:C.text}}>Yorumlar ({comments.length})</div>
-            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{newsTitle?.slice(0,50)}...</div>
+            <div style={{fontWeight:800,fontSize:14,color:C.text}}>💬 Yorumlar ({comments.length})</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{newsTitle?.slice(0,50)}</div>
           </div>
-          <button onClick={onClose} style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',color:C.text,fontSize:18}}>×</button>
+          <button onClick={onClose} style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',color:C.text,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+        </div>
+        {/* Kim yazıyor - kendi adı */}
+        <div style={{padding:'8px 20px',background:`${C.accent}08`,borderBottom:`1px solid ${C.border}`,flexShrink:0,display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:8,height:8,borderRadius:4,background:'#22c55e'}}/>
+          <span style={{fontSize:12,color:C.accent,fontWeight:700}}>{userName}</span>
+          <span style={{fontSize:11,color:C.muted}}>olarak yorum yapıyorsun</span>
         </div>
         {/* Yorumlar */}
         <div style={{flex:1,overflowY:'auto',padding:'12px 16px'}}>
           {comments.length===0 && (
-            <div style={{textAlign:'center',padding:'24px',color:C.muted,fontSize:13}}>
-              Henuz yorum yok. Ilk yorumu sen yap!
+            <div style={{textAlign:'center',padding:'32px 16px',color:C.muted}}>
+              <div style={{fontSize:36,marginBottom:8}}>💬</div>
+              <div style={{fontWeight:700,color:C.dim}}>Henuz yorum yok</div>
+              <div style={{fontSize:12,marginTop:4}}>Ilk yorumu sen yap!</div>
             </div>
           )}
-          {comments.map(c => (
-            <div key={c.id} style={{background:C.bg,borderRadius:12,padding:'10px 12px',marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                <span style={{fontWeight:700,fontSize:13,color:C.accent}}>{c.name}</span>
-                <span style={{fontSize:10,color:C.muted}}>
-                  {c.createdAt?.toDate?.()?.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})||''}
-                </span>
+          {comments.map(c => {
+            const isMe = c.userId === userId;
+            return (
+              <div key={c.id} style={{display:'flex',justifyContent:isMe?'flex-end':'flex-start',marginBottom:10}}>
+                <div style={{maxWidth:'80%',background:isMe?C.accentBg:C.bg,
+                  borderRadius:14,borderBottomRightRadius:isMe?3:14,borderBottomLeftRadius:isMe?14:3,
+                  padding:'8px 12px',border:`1px solid ${isMe?C.accent+'40':C.border}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+                    <span style={{fontWeight:700,fontSize:12,color:isMe?C.accent:C.blue}}>{c.name}</span>
+                    <span style={{fontSize:9,color:C.muted}}>
+                      {c.createdAt?.toDate?.()?.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})||''}
+                    </span>
+                  </div>
+                  <div style={{fontSize:13,color:C.text,lineHeight:'18px'}}>{c.text}</div>
+                </div>
               </div>
-              <div style={{fontSize:13,color:C.text,lineHeight:'18px'}}>{c.text}</div>
-            </div>
-          ))}
+            );
+          })}
+          <div ref={bottomRef}/>
         </div>
         {/* Yorum yaz */}
-        <div style={{padding:'12px 16px 20px',borderTop:`1px solid ${C.border}`,flexShrink:0}}>
-          <input style={{...s.input,marginBottom:8}} placeholder="Adiniz"
-            value={name} onChange={e=>setName(e.target.value)} maxLength={30}/>
+        <div style={{padding:'10px 16px 20px',borderTop:`1px solid ${C.border}`,flexShrink:0}}>
           <div style={{display:'flex',gap:8}}>
-            <input style={{...s.input,flex:1}} placeholder="Yorumunuz..."
+            <input style={{...s.input,flex:1}} placeholder="Yorumunuzu yazin..."
               value={text} onChange={e=>setText(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&submit()} maxLength={300}/>
-            <button onClick={submit} disabled={sending||!text.trim()||!name.trim()}
-              style={{background:sending||!text.trim()||!name.trim()?C.border:C.accent,border:'none',
-                borderRadius:12,padding:'0 16px',fontWeight:800,color:sending||!text.trim()||!name.trim()?C.muted:'#0A0E1A',
+              onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&submit()} maxLength={300}/>
+            <button onClick={submit} disabled={sending||!text.trim()}
+              style={{background:sending||!text.trim()?C.border:C.accent,border:'none',
+                borderRadius:12,padding:'0 16px',fontWeight:800,
+                color:sending||!text.trim()?C.muted:'#0A0E1A',
                 cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
-              {sending?<Spinner size={14}/>:null} Gonder
+              {sending?<Spinner size={14}/>:'↑'}
             </button>
           </div>
         </div>
@@ -2200,7 +2631,7 @@ export default function App() {
         {/* Ekranlar */}
         <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
           {tab==='home'   && <HomeScreen   data={data} setData={setData} user={user} />}
-          {tab==='news'   && <NewsFeedScreen />}
+          {tab==='news'   && <NewsFeedScreen user={user} />}
           {tab==='stocks' && <StocksScreen data={data} setData={setData} />}
           {tab==='budget' && <BudgetScreen data={data} setData={setData} />}
           {tab==='invest' && <InvestmentScreen data={data} setData={setData} />}
