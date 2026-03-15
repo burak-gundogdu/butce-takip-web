@@ -12,25 +12,82 @@ import {
 // ─── ADMIN ─────────────────────────────────────────────────────────────────
 const ADMIN_UID = 'kHtyEx0LG8VPuEYkj2JPNFZPRy12';
 
-// ─── RENKLER ───────────────────────────────────────────────────────────────
-const C = {
-  bg: '#0A0E1A', card: '#111827', border: '#1F2937',
-  accent: '#6EE7B7', accentBg: '#065F46',
-  red: '#F87171', redBg: '#2d0a0a',
-  yellow: '#FCD34D', yellowBg: '#1c1400',
-  blue: '#60A5FA', blueBg: '#0c1f3d',
-  purple: '#A78BFA', purpleBg: '#1a0d2e',
-  text: '#F9FAFB', muted: '#6B7280', dim: '#9CA3AF',
-  silver: '#CBD5E1', silverBg: '#0d1421',
-  green: '#4ade80', orange: '#FB923C',
+// ─── TEMA ──────────────────────────────────────────────────────────────────
+const THEMES = {
+  dark: {
+    bg:'#0A0E1A', card:'#111827', border:'#1F2937',
+    accent:'#6EE7B7', accentBg:'#065F46',
+    red:'#F87171', redBg:'#2d0a0a',
+    yellow:'#FCD34D', yellowBg:'#1c1400',
+    blue:'#60A5FA', blueBg:'#0c1f3d',
+    purple:'#A78BFA', purpleBg:'#1a0d2e',
+    text:'#F9FAFB', muted:'#6B7280', dim:'#9CA3AF',
+    silver:'#CBD5E1', silverBg:'#0d1421',
+    green:'#4ade80', orange:'#FB923C',
+    headerBg:'#0D1B2A',
+  },
+  light: {
+    bg:'#F1F5F9', card:'#FFFFFF', border:'#E2E8F0',
+    accent:'#059669', accentBg:'#D1FAE5',
+    red:'#EF4444', redBg:'#FEE2E2',
+    yellow:'#D97706', yellowBg:'#FEF3C7',
+    blue:'#2563EB', blueBg:'#DBEAFE',
+    purple:'#7C3AED', purpleBg:'#EDE9FE',
+    text:'#0F172A', muted:'#64748B', dim:'#475569',
+    silver:'#64748B', silverBg:'#F8FAFC',
+    green:'#16A34A', orange:'#EA580C',
+    headerBg:'#FFFFFF',
+  },
 };
+let C = THEMES.dark;
+
+// ─── DİL ───────────────────────────────────────────────────────────────────
+const LANGS = {
+  tr: {
+    genel:'Genel', haberler:'Haberler', hisseler:'Hisseler', butce:'Butce',
+    yatirim:'Yatirim', analiz:'Analiz', asistan:'Asistan', daha:'Daha',
+    bakiye:'TOPLAM BAKİYE', portfoy:'Portfoy', guncelle:'Guncelle',
+    ekle:'Ekle', sil:'Sil', kaydet:'Kaydet', iptal:'Iptal',
+    gelir:'Gelir', gider:'Gider', net:'Net',
+    canliKurlar:'Canli Kurlar', bistEndeksleri:'BIST ENDEKSLERİ',
+    haberYok:'Haber yok', yukselenler:'Yukselenler', dusenler:'Dusenler',
+    favoriler:'Favoriler', tumHisseler:'Tum Hisseler',
+    fiyatGuncelle:'Fiyat Guncelle', yorumYap:'Yorum Yap',
+    haberiOku:'Haberin Tamamini Oku', aiAnalizi:'AI ANALİZİ',
+    bildirimler:'Bildirimler', temaSec:'Tema Sec', dilSec:'Dil Sec',
+    karanlik:'Karanlik', aydinlik:'Aydinlik',
+    turkce:'Turkce', ingilizce:'Ingilizce',
+    alarm:'Fiyat Alarmi', alarmEkle:'Alarm Ekle', alarmYok:'Alarm yok',
+    hedefFiyat:'Hedef Fiyat', ust:'Uste Cikarsa', alt:'Alta Duserse',
+    cikisYap:'Cikis Yap', hesap:'Hesap',
+  },
+  en: {
+    genel:'Home', haberler:'News', hisseler:'Stocks', butce:'Budget',
+    yatirim:'Portfolio', analiz:'Analytics', asistan:'Assistant', daha:'More',
+    bakiye:'TOTAL BALANCE', portfoy:'Portfolio', guncelle:'Refresh',
+    ekle:'Add', sil:'Delete', kaydet:'Save', iptal:'Cancel',
+    gelir:'Income', gider:'Expense', net:'Net',
+    canliKurlar:'Live Rates', bistEndeksleri:'BIST INDICES',
+    haberYok:'No news', yukselenler:'Gainers', dusenler:'Losers',
+    favoriler:'Favorites', tumHisseler:'All Stocks',
+    fiyatGuncelle:'Refresh Prices', yorumYap:'Comment',
+    haberiOku:'Read Full Article', aiAnalizi:'AI ANALYSIS',
+    bildirimler:'Notifications', temaSec:'Select Theme', dilSec:'Select Language',
+    karanlik:'Dark', aydinlik:'Light',
+    turkce:'Turkish', ingilizce:'English',
+    alarm:'Price Alert', alarmEkle:'Add Alert', alarmYok:'No alerts',
+    hedefFiyat:'Target Price', ust:'If rises above', alt:'If falls below',
+    cikisYap:'Sign Out', hesap:'Account',
+  },
+};
+let T = LANGS.tr;
 
 const TROY = 31.1035;
 const INIT = {
   startBalance: 0, transactions: [], investments: [],
   subscriptions: [], goals: [], budget: 0,
   debts: [], recurring: [],
-  settings: { groqKey: '' },
+  settings: { groqKey: '', theme: 'dark', lang: 'tr', favStocks: [], priceAlerts: [] },
 };
 
 // ─── STİLLER ───────────────────────────────────────────────────────────────
@@ -1181,42 +1238,164 @@ function RecurTab({ data, setData }) {
 }
 
 function SettingsTab({ data, setData, user }) {
-  const resetAll = ()=>{ if(confirm('Tum veriler silinecek! Emin misiniz?')) { setData({...INIT}); alert('Veriler temizlendi.'); } };
+  const theme   = data.settings?.theme || 'dark';
+  const lang    = data.settings?.lang  || 'tr';
+  const alerts  = data.settings?.priceAlerts || [];
+  const [alCode, setAC]   = useState('');
+  const [alPrice, setAP]  = useState('');
+  const [alDir, setAD]    = useState('ust');
+  const [notifPerm, setNP] = useState(Notification?.permission || 'default');
+
+  const setTheme = (t) => setData(d => ({...d, settings:{...d.settings, theme:t}}));
+  const setLang  = (l) => setData(d => ({...d, settings:{...d.settings, lang:l}}));
+
+  const addAlert = () => {
+    if (!alCode || !alPrice) return;
+    const newAlerts = [...alerts, {id:Date.now(), code:alCode.toUpperCase(), price:parseFloat(alPrice), dir:alDir, active:true}];
+    setData(d => ({...d, settings:{...d.settings, priceAlerts:newAlerts}}));
+    setAC(''); setAP('');
+  };
+  const delAlert = (id) => setData(d => ({...d, settings:{...d.settings, priceAlerts:alerts.filter(a=>a.id!==id)}}));
+
+  const requestNotif = async () => {
+    if (!('Notification' in window)) return alert('Tarayici bildirim desteklemiyor');
+    const p = await Notification.requestPermission();
+    setNP(p);
+    if (p === 'granted') {
+      new Notification('Butce Takip', { body: 'Bildirimler aktif!', icon: '/icon-192.png' });
+    }
+  };
+
+  const installPWA = () => {
+    if (window._pwaPrompt) { window._pwaPrompt.prompt(); }
+    else alert('Tarayici menusunden "Ana Ekrana Ekle" yi sec');
+  };
+
+  const resetAll = ()=>{ if(confirm('Tum veriler silinecek!')) { setData({...INIT}); } };
   const exportCSV = ()=>{
     let csv='Tarih,Tur,Kategori,Tutar,Not\n';
     data.transactions.forEach(t=>{ csv+=`${t.date},${t.type},${t.category},${t.amount},"${(t.note||'').replace(/"/g,'')}"\n`; });
     const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
     const a=document.createElement('a'); a.href=url; a.download='butce.csv'; a.click();
   };
+
+  const sectionTitle = {fontSize:11,color:C.muted,fontWeight:700,letterSpacing:'1px',marginBottom:10,marginTop:4};
+
   return (
     <div style={s.scrollArea}>
-      {/* Kullanici */}
+      {/* Hesap */}
       <Card style={{borderColor:C.accentBg}}>
-        <H title="Hesap" />
+        <H title={T.hesap} />
         <Row label="Email" value={user?.email||'-'} />
         <Row label="Ad" value={user?.displayName||'Anonim'} />
-        <button onClick={()=>signOut(auth)} style={{...s.btn,background:C.border,color:C.dim,marginTop:12}}>Cikis Yap</button>
+        <button onClick={()=>signOut(auth)} style={{...s.btn,background:C.border,color:C.dim,marginTop:12}}>{T.cikisYap}</button>
       </Card>
 
+      {/* Tema */}
+      <Card>
+        <H title={T.temaSec} />
+        <div style={{display:'flex',gap:10}}>
+          {[['dark','🌙 '+T.karanlik],['light','☀️ '+T.aydinlik]].map(([t,l])=>(
+            <button key={t} onClick={()=>setTheme(t)}
+              style={{flex:1,padding:12,border:`2px solid ${theme===t?C.accent:C.border}`,borderRadius:12,
+                background:theme===t?C.accentBg:'transparent',color:theme===t?C.accent:C.muted,
+                cursor:'pointer',fontWeight:700,fontSize:13}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </Card>
 
+      {/* Dil */}
+      <Card>
+        <H title={T.dilSec} />
+        <div style={{display:'flex',gap:10}}>
+          {[['tr','🇹🇷 '+T.turkce],['en','🇬🇧 '+T.ingilizce]].map(([l,label])=>(
+            <button key={l} onClick={()=>setLang(l)}
+              style={{flex:1,padding:12,border:`2px solid ${lang===l?C.blue:C.border}`,borderRadius:12,
+                background:lang===l?C.blueBg:'transparent',color:lang===l?C.blue:C.muted,
+                cursor:'pointer',fontWeight:700,fontSize:13}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Bildirimler + PWA */}
+      <Card>
+        <H title={T.bildirimler} />
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div>
+            <div style={s.body}>Tarayici Bildirimleri</div>
+            <div style={{...s.tiny,color:notifPerm==='granted'?C.green:C.muted}}>
+              {notifPerm==='granted'?'Aktif ✓':notifPerm==='denied'?'Engellendi':'İzin verilmedi'}
+            </div>
+          </div>
+          {notifPerm !== 'granted' && (
+            <button onClick={requestNotif}
+              style={{background:C.accentBg,border:`1px solid ${C.accent}`,borderRadius:10,
+                padding:'8px 14px',color:C.accent,fontSize:12,fontWeight:700,cursor:'pointer'}}>
+              İzin Ver
+            </button>
+          )}
+        </div>
+        <button onClick={installPWA}
+          style={{...s.btn,background:C.blueBg,border:`1px solid ${C.blue}`,color:C.blue}}>
+          📱 Ana Ekrana Ekle (PWA)
+        </button>
+      </Card>
+
+      {/* Fiyat Alarmları */}
+      <Card>
+        <H title={T.alarm} sub="Hisse fiyati hedefe ulasinca bildir" />
+        {alerts.length === 0
+          ? <div style={{...s.tiny,textAlign:'center',padding:'12px 0'}}>{T.alarmYok}</div>
+          : alerts.map(a => (
+            <div key={a.id} style={{...s.txRow}}>
+              <div style={{flex:1}}>
+                <div style={s.body}>{a.code}</div>
+                <div style={s.tiny}>{a.dir==='ust'?'↑ Uste':'↓ Alta'} {fmtD(a.price)} ₺</div>
+              </div>
+              <button onClick={()=>delAlert(a.id)}
+                style={{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:18}}>×</button>
+            </div>
+          ))
+        }
+        <div style={{marginTop:12}}>
+          <div style={{display:'flex',gap:8,marginBottom:8}}>
+            {['ust','alt'].map(d=>(
+              <button key={d} onClick={()=>setAD(d)}
+                style={{flex:1,padding:8,border:'none',borderRadius:10,cursor:'pointer',fontWeight:700,fontSize:12,
+                  background:alDir===d?C.accent:C.border,color:alDir===d?'#0A0E1A':C.muted}}>
+                {d==='ust'?'↑ Uste Cikarsa':'↓ Alta Duserse'}
+              </button>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <input style={{...s.input,flex:1}} placeholder="Hisse (THYAO)" value={alCode} onChange={e=>setAC(e.target.value)}/>
+            <input style={{...s.input,flex:1}} placeholder="Fiyat (₺)" type="number" value={alPrice} onChange={e=>setAP(e.target.value)}/>
+          </div>
+          <button onClick={addAlert} style={{...s.btn,background:C.yellow,color:'#0A0E1A',marginTop:8}}>{T.alarmEkle}</button>
+        </div>
+      </Card>
 
       {/* Export */}
       <Card>
         <H title="Veri Disa Aktarimi" />
-        <div style={{...s.tiny,marginBottom:12}}>Islemler CSV olarak indirilir. Toplam {data.transactions.length} islem.</div>
+        <div style={{...s.tiny,marginBottom:12}}>{data.transactions.length} islem CSV olarak indirilir.</div>
         <button onClick={exportCSV} style={{...s.btn,background:C.green,color:'#0A0E1A'}}>CSV Olarak Indir</button>
       </Card>
 
       {/* Hakkinda */}
       <Card>
         <H title="Uygulama Hakkinda" />
-        <Row label="Versiyon" value="Web 1.0" />
+        <Row label="Versiyon" value="Web 2.0" />
         <Row label="Toplam islem" value={`${data.transactions.length}`} />
-        <Row label="Toplam varlik" value={`${data.investments.length}`} />
-        <Row label="Borc kaydi" value={`${(data.debts||[]).length}`} />
+        <Row label="Varlik" value={`${data.investments.length}`} />
+        <Row label="Borc" value={`${(data.debts||[]).length}`} />
+        <Row label="Fiyat alarmi" value={`${alerts.length}`} />
       </Card>
 
-      {/* Reset */}
       <Card style={{borderColor:C.red}}>
         <H title="Tehlikeli Bolge" />
         <button onClick={resetAll} style={{...s.btn,background:C.redBg,border:`1px solid ${C.red}`,color:C.red}}>Tum Verileri Sifirla</button>
@@ -1586,6 +1765,8 @@ function NewsFeedScreen({ user }) {
   const [showSaved, setShowS]   = useState(false);
   const [saved, setSaved]       = useState([]);
   const [commentNews, setCN]    = useState(null);
+  const [likes, setLikes]       = useState({}); // newsId -> bool
+  const [catFilter, setCatF]    = useState('all');
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
 
@@ -1601,8 +1782,21 @@ function NewsFeedScreen({ user }) {
     return unsub;
   },[]);
 
-  const current = cards[idx];
-  const progress = cards.length ? (idx/cards.length)*100 : 0;
+  // Kategori filtresi
+  const NEWS_CATS = [
+    {id:'all',label:'Tümü'},
+    {id:'💰 Ekonomi',label:'💰 Ekonomi'},
+    {id:'💵 Doviz',label:'💵 Döviz'},
+    {id:'📊 Piyasa',label:'📊 Piyasa'},
+    {id:'🏦 MB',label:'🏦 MB'},
+    {id:'🏢 Sirket',label:'🏢 Şirket'},
+    {id:'📋 KAP',label:'📋 KAP'},
+    {id:'🟢 Pozitif',label:'🟢 Pozitif'},
+    {id:'🔴 Riskli',label:'🔴 Riskli'},
+  ];
+  const filteredCards = catFilter === 'all' ? cards : cards.filter(c => c.etiket?.includes(catFilter));
+  const current = filteredCards[idx];
+  const progress = filteredCards.length ? (idx/filteredCards.length)*100 : 0;
 
   const tipCfg = {
     haber:  {color:C.purple, bg:'#0f0a1f', icon:'📰'},
@@ -1611,7 +1805,7 @@ function NewsFeedScreen({ user }) {
   };
 
   const goNext=(dir='up')=>{
-    if(idx>=cards.length-1) return;
+    if(idx>=filteredCards.length-1) return;
     setSwipe(dir);
     setTimeout(()=>{ setIdx(i=>i+1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },260);
   };
@@ -1620,7 +1814,7 @@ function NewsFeedScreen({ user }) {
     setSwipe('down');
     setTimeout(()=>{ setIdx(i=>i-1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },260);
   };
-  const shuffle=()=>{ setCards([...allCards].sort(()=>Math.random()-0.5)); setIdx(0); };
+  const shuffle=()=>{ setCards([...allCards].sort(()=>Math.random()-0.5)); setIdx(0); setCatF('all'); };
   const saveCard=()=>{ if(current&&!saved.find(s=>s.id===current.id)) setSaved(s=>[...s,current]); };
 
   // Touch navigation - sadece kartın dışındaki alanlarda çalışır
@@ -1714,7 +1908,7 @@ function NewsFeedScreen({ user }) {
     </div>
   );
 
-  if(idx>=cards.length) return (
+  if(idx>=filteredCards.length) return (
     <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',padding:32,textAlign:'center'}}>
       <div style={{fontSize:52,marginBottom:16}}>🎉</div>
       <div style={{color:C.text,fontWeight:800,fontSize:18,marginBottom:8}}>Hepsini okudun!</div>
@@ -1760,8 +1954,20 @@ function NewsFeedScreen({ user }) {
           </div>
         </div>
         {/* Progress bar */}
-        <div style={{height:3,background:'#ffffff10',borderRadius:2,overflow:'hidden'}}>
+        <div style={{height:3,background:'#ffffff10',borderRadius:2,overflow:'hidden',marginBottom:8}}>
           <div style={{height:'100%',width:`${progress}%`,background:cfg.color,borderRadius:2,transition:'width 0.3s'}}/>
+        </div>
+        {/* Kategori filtresi */}
+        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
+          {NEWS_CATS.map(cat=>(
+            <button key={cat.id} onClick={()=>{setCatF(cat.id);setIdx(0);}}
+              style={{padding:'4px 10px',border:'none',borderRadius:20,cursor:'pointer',
+                fontWeight:700,fontSize:10,whiteSpace:'nowrap',flexShrink:0,
+                background:catFilter===cat.id?cfg.color:C.border,
+                color:catFilter===cat.id?'#0A0E1A':C.muted}}>
+              {cat.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1826,15 +2032,35 @@ function NewsFeedScreen({ user }) {
               </div>
             )}
 
-            {/* Kaynak linki */}
-            {current?.url&&(
-              <a href={current.url} target="_blank" rel="noreferrer"
-                style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:cfg.color,
-                  background:`${cfg.color}15`,borderRadius:20,padding:'6px 14px',textDecoration:'none',
-                  fontWeight:700,marginBottom:12}}>
-                🔗 Haberin Tamamini Oku
-              </a>
-            )}
+            {/* Beğen + Kaynak */}
+            <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+              <button onClick={()=>setLikes(l=>({...l,[current?.id]:!l[current?.id]}))}
+                style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,
+                  background:likes[current?.id]?C.redBg:C.border,
+                  border:`1px solid ${likes[current?.id]?C.red:C.border}`,
+                  borderRadius:20,padding:'6px 12px',cursor:'pointer',fontWeight:600,
+                  color:likes[current?.id]?C.red:C.muted}}>
+                {likes[current?.id]?'❤️':'🤍'}
+              </button>
+              {current?.url&&(
+                <a href={current.url} target="_blank" rel="noreferrer"
+                  style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:cfg.color,
+                    background:`${cfg.color}15`,borderRadius:20,padding:'6px 12px',textDecoration:'none',fontWeight:700}}>
+                  🔗 {T.haberiOku}
+                </a>
+              )}
+              <button onClick={()=>{
+                if(navigator.share && current?.url) {
+                  navigator.share({title:current?.baslik, url:current?.url}).catch(()=>{});
+                } else if (current?.url) {
+                  navigator.clipboard?.writeText(current.url);
+                  alert('Link kopyalandi!');
+                }
+              }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:C.dim,
+                background:C.border,border:'none',borderRadius:20,padding:'6px 12px',cursor:'pointer'}}>
+                📤
+              </button>
+            </div>
             {/* Yorumlar - kart altinda sabit */}
             {current?.id && (
               <CommentsSummary newsId={current.id} onOpenFull={()=>setCN({id:current.id,baslik:current.baslik})} />
@@ -2197,6 +2423,7 @@ function StocksScreen({ data, setData }) {
   const [search, setSearch]     = useState('');
   const [tab, setTab]           = useState('tumuSorted');
   const [lastUpdate, setLU]     = useState(null);
+  const [selectedStock, setSS]  = useState(null);
   const favs = data.settings?.favStocks || [];
 
   const toggleFav = (code) => {
@@ -2326,8 +2553,10 @@ function StocksScreen({ data, setData }) {
           const isUp   = chg > 0;
           const isDown = chg < 0;
           return (
-            <div key={stock.code} style={{display:'flex',alignItems:'center',padding:'10px 0',
-              borderBottom:`1px solid ${C.border}`}}>
+            <div key={stock.code}
+              onClick={()=>setSS(stock)}
+              style={{display:'flex',alignItems:'center',padding:'10px 0',
+                borderBottom:`1px solid ${C.border}`,cursor:'pointer'}}>
               {/* Sol: kod + isim + sektör */}
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
@@ -2372,6 +2601,126 @@ function StocksScreen({ data, setData }) {
             {displayed.length} hisse gösteriliyor
           </div>
         )}
+      </div>
+      {/* Hisse detay modal */}
+      {selectedStock && (
+        <StockDetailModal
+          stock={selectedStock}
+          isFav={favs.includes(selectedStock.code)}
+          onToggleFav={()=>toggleFav(selectedStock.code)}
+          onClose={()=>setSS(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── HİSSE DETAY MODALİ ────────────────────────────────────────────────────
+function StockDetailModal({ stock, onClose, isFav, onToggleFav }) {
+  const [info, setInfo]   = useState(null);
+  const [loading, setL]   = useState(true);
+  const [history, setHist] = useState([]);
+
+  useEffect(() => {
+    if (!stock) return;
+    setL(true);
+    // Fiyat + 1 aylik gecmis
+    Promise.all([
+      fetch(`/api/price?ticker=${stock.code}.IS`).then(r=>r.json()),
+      fetch(`/api/prices?tickers=${stock.code}.IS`).then(r=>r.json()),
+    ]).then(([p, bulk]) => {
+      const priceData = bulk.prices?.[stock.code] || {};
+      setInfo({
+        price: priceData.price || p.price,
+        change: priceData.change,
+        prev: priceData.prev,
+        name: priceData.name || stock.name,
+      });
+      setL(false);
+    }).catch(() => setL(false));
+  }, [stock?.code]);
+
+  if (!stock) return null;
+  const isUp = (info?.change || 0) > 0;
+  const isDown = (info?.change || 0) < 0;
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:100,
+      display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+      <div style={{background:C.card,borderRadius:'20px 20px 0 0',border:`1px solid ${C.border}`,
+        maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+          padding:'16px 20px',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontWeight:900,fontSize:20,color:C.text}}>{stock.code}</span>
+              <span style={{fontSize:11,color:C.muted,background:C.border,borderRadius:20,padding:'2px 8px'}}>
+                {stock.sektor}
+              </span>
+              <button onClick={onToggleFav}
+                style={{background:'none',border:'none',cursor:'pointer',fontSize:18,
+                  color:isFav?C.yellow:C.muted}}>
+                {isFav?'⭐':'☆'}
+              </button>
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{info?.name || stock.name}</div>
+          </div>
+          <button onClick={onClose}
+            style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,
+              cursor:'pointer',color:C.text,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            ×
+          </button>
+        </div>
+
+        <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
+          {loading ? (
+            <div style={{display:'flex',justifyContent:'center',padding:40}}><Spinner size={32}/></div>
+          ) : (
+            <>
+              {/* Fiyat */}
+              <div style={{background:isUp?C.accentBg:isDown?C.redBg:C.bg,borderRadius:16,padding:20,marginBottom:16,
+                border:`1px solid ${isUp?C.accent:isDown?C.red:C.border}`}}>
+                <div style={{fontSize:10,color:C.muted,letterSpacing:'1px',marginBottom:4}}>GÜNCEL FİYAT</div>
+                <div style={{fontSize:36,fontWeight:900,color:C.text}}>
+                  {info?.price ? `${fmtD(info.price)} ₺` : '—'}
+                </div>
+                {info?.change != null && (
+                  <div style={{fontSize:15,fontWeight:700,color:isUp?C.accent:isDown?C.red:C.muted,marginTop:4}}>
+                    {isUp?'▲':'▼'} %{Math.abs(info.change).toFixed(2)}
+                    {info.prev && <span style={{fontSize:12,color:C.muted,marginLeft:8}}>
+                      Önceki: {fmtD(info.prev)} ₺
+                    </span>}
+                  </div>
+                )}
+              </div>
+
+              {/* Bilgiler */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+                {[
+                  {l:'Borsa',v:'BIST'},
+                  {l:'Sektör',v:stock.sektor},
+                  {l:'Sembol',v:`${stock.code}.IS`},
+                  {l:'Favori',v:isFav?'⭐ Evet':'—'},
+                ].map((item,i) => (
+                  <div key={i} style={{background:C.bg,borderRadius:12,padding:'10px 12px',border:`1px solid ${C.border}`}}>
+                    <div style={{fontSize:10,color:C.muted}}>{item.l}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:2}}>{item.v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Portföye ekle kısayolu */}
+              <div style={{background:C.blueBg,borderRadius:14,padding:14,border:`1px solid ${C.blue}40`}}>
+                <div style={{fontSize:12,color:C.blue,fontWeight:700,marginBottom:4}}>💡 Portföye Ekle</div>
+                <div style={{fontSize:12,color:C.dim}}>
+                  Bu hisseyi Yatırım ekranından portföyüne ekleyebilirsin.
+                  Sembol: <strong style={{color:C.text}}>{stock.code}</strong>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2530,15 +2879,256 @@ function CommentsModal({ newsId, newsTitle, user, onClose }) {
   );
 }
 
+// ─── KRİPTO EKRANI ─────────────────────────────────────────────────────────
+const TOP_CRYPTOS = [
+  {sym:'BTC-USD',  name:'Bitcoin',       icon:'₿'},
+  {sym:'ETH-USD',  name:'Ethereum',      icon:'Ξ'},
+  {sym:'BNB-USD',  name:'BNB',           icon:'🔶'},
+  {sym:'SOL-USD',  name:'Solana',        icon:'◎'},
+  {sym:'XRP-USD',  name:'XRP',           icon:'✕'},
+  {sym:'ADA-USD',  name:'Cardano',       icon:'₳'},
+  {sym:'AVAX-USD', name:'Avalanche',     icon:'🔺'},
+  {sym:'DOGE-USD', name:'Dogecoin',      icon:'🐕'},
+  {sym:'DOT-USD',  name:'Polkadot',      icon:'●'},
+  {sym:'MATIC-USD',name:'Polygon',       icon:'⬡'},
+  {sym:'LINK-USD', name:'Chainlink',     icon:'⬡'},
+  {sym:'UNI-USD',  name:'Uniswap',       icon:'🦄'},
+  {sym:'LTC-USD',  name:'Litecoin',      icon:'Ł'},
+  {sym:'ATOM-USD', name:'Cosmos',        icon:'⚛'},
+  {sym:'XLM-USD',  name:'Stellar',       icon:'✦'},
+  {sym:'ALGO-USD', name:'Algorand',      icon:'◈'},
+  {sym:'VET-USD',  name:'VeChain',       icon:'✓'},
+  {sym:'FIL-USD',  name:'Filecoin',      icon:'⛁'},
+  {sym:'TRX-USD',  name:'TRON',          icon:'◈'},
+  {sym:'NEAR-USD', name:'NEAR Protocol', icon:'◎'},
+];
+
+function CryptoScreen({ data, setData }) {
+  const [prices, setPrices]   = useState({});
+  const [usdTry, setUsdTry]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch]   = useState('');
+  const [currency, setCur]    = useState('USD'); // USD | TRY
+  const [lastUpdate, setLU]   = useState(null);
+  const favCryptos = data.settings?.favCryptos || [];
+
+  const toggleFav = (sym) => {
+    const n = favCryptos.includes(sym) ? favCryptos.filter(c=>c!==sym) : [...favCryptos, sym];
+    setData(d=>({...d, settings:{...d.settings, favCryptos:n}}));
+  };
+
+  const loadPrices = async () => {
+    setLoading(true);
+    try {
+      // USD/TRY kuru
+      const rateRes = await fetch('/api/price?ticker=USDTRY%3DX').then(r=>r.json());
+      const rate = rateRes.price || 1;
+      setUsdTry(rate);
+
+      // Tüm kripto fiyatları
+      const tickers = TOP_CRYPTOS.map(c=>c.sym).join(',');
+      const res = await fetch('/api/prices', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({tickers}),
+      }).then(r=>r.json());
+
+      setPrices(res.prices || {});
+      setLU(new Date());
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadPrices(); }, []);
+
+  const filtered = TOP_CRYPTOS.filter(c =>
+    !search ||
+    c.sym.toLowerCase().includes(search.toLowerCase()) ||
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const fmt2 = (usd) => {
+    if (usd == null) return '—';
+    if (currency === 'TRY' && usdTry) {
+      const tl = usd * usdTry;
+      return `${tl >= 1000 ? fmtD(tl,0) : tl >= 1 ? fmtD(tl,2) : fmtD(tl,4)} ₺`;
+    }
+    return usd >= 1000 ? `$${fmtD(usd,0)}` : usd >= 1 ? `$${fmtD(usd,2)}` : `$${fmtD(usd,6)}`;
+  };
+
+  const totalPortfolio = (data.investments || []).filter(i => i.type === 'Kripto').reduce((a,i) => a + i.current*(i.adet||1), 0);
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* Header */}
+      <div style={{padding:'10px 16px 8px',background:'#0a0a1a',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div>
+            <span style={{fontWeight:800,fontSize:14,color:C.text}}>₿ Kripto Piyasası</span>
+            {lastUpdate && <span style={{fontSize:10,color:C.muted,marginLeft:8}}>
+              {lastUpdate.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}
+            </span>}
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {/* Para birimi toggle */}
+            <div style={{display:'flex',background:C.card,borderRadius:20,padding:2}}>
+              {['USD','TRY'].map(cur => (
+                <button key={cur} onClick={()=>setCur(cur)}
+                  style={{padding:'4px 10px',border:'none',borderRadius:18,cursor:'pointer',
+                    fontWeight:700,fontSize:11,
+                    background:currency===cur?C.purple:'transparent',
+                    color:currency===cur?'#fff':C.muted}}>
+                  {cur}
+                </button>
+              ))}
+            </div>
+            <button onClick={loadPrices} disabled={loading}
+              style={{background:C.purpleBg,border:`1px solid ${C.purple}40`,borderRadius:20,
+                padding:'5px 12px',color:C.purple,fontSize:11,fontWeight:700,
+                cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+              {loading?<Spinner size={12} color={C.purple}/>:'↺'}
+            </button>
+          </div>
+        </div>
+
+        {/* Kripto portföy özeti */}
+        {totalPortfolio > 0 && (
+          <div style={{background:C.purpleBg,border:`1px solid ${C.purple}30`,borderRadius:12,
+            padding:'8px 12px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:11,color:C.purple,fontWeight:700}}>💼 Kripto Portföyüm</span>
+            <span style={{fontSize:14,fontWeight:800,color:C.purple}}>{fmt(totalPortfolio)}</span>
+          </div>
+        )}
+
+        <input style={{...s.input,padding:'8px 12px'}}
+          placeholder="Bitcoin, ETH, BNB..."
+          value={search} onChange={e=>setSearch(e.target.value)}/>
+      </div>
+
+      {/* Liste */}
+      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+        {usdTry && (
+          <div style={{padding:'8px 0',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between'}}>
+            <span style={{fontSize:11,color:C.muted}}>1 USD</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.text}}>{fmtD(usdTry)} ₺</span>
+          </div>
+        )}
+        {filtered.map(crypto => {
+          const info   = prices[crypto.sym];
+          const price  = info?.price;
+          const chg    = info?.change;
+          const isFav  = favCryptos.includes(crypto.sym);
+          const isUp   = (chg||0) > 0;
+          const isDown = (chg||0) < 0;
+
+          return (
+            <div key={crypto.sym} style={{display:'flex',alignItems:'center',
+              padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+              {/* Icon + isim */}
+              <div style={{width:40,height:40,borderRadius:20,background:C.purpleBg,
+                border:`1px solid ${C.purple}40`,display:'flex',alignItems:'center',
+                justifyContent:'center',fontSize:16,marginRight:12,flexShrink:0}}>
+                {crypto.icon}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:800,fontSize:14,color:C.text}}>{crypto.name}</div>
+                <div style={{fontSize:11,color:C.muted}}>{crypto.sym.replace('-USD','')}</div>
+              </div>
+              {/* Fiyat */}
+              <div style={{textAlign:'right',marginRight:10}}>
+                {price != null ? (
+                  <>
+                    <div style={{fontWeight:800,fontSize:14,color:C.text}}>{fmt2(price)}</div>
+                    {chg != null && (
+                      <div style={{fontSize:11,fontWeight:700,
+                        color:isUp?C.accent:isDown?C.red:C.muted}}>
+                        {isUp?'▲':'▼'} %{Math.abs(chg).toFixed(2)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  loading ? <Spinner size={14} color={C.purple}/> : <span style={{color:C.border}}>—</span>
+                )}
+              </div>
+              <button onClick={()=>toggleFav(crypto.sym)}
+                style={{background:'none',border:`1px solid ${isFav?C.yellow:C.border}`,
+                  borderRadius:20,padding:'5px 8px',cursor:'pointer',
+                  fontSize:13,color:isFav?C.yellow:C.muted,flexShrink:0}}>
+                {isFav?'⭐':'☆'}
+              </button>
+            </div>
+          );
+        })}
+        <div style={{textAlign:'center',padding:'16px 0',color:C.muted,fontSize:11}}>
+          {TOP_CRYPTOS.length} kripto para birimi
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ANA UYGULAMA ──────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser]     = useState(undefined);
   const [tab, setTab]       = useState('home');
   const { data, setData, loading } = useUserData(user?.uid);
 
+  // PWA install prompt
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); window._pwaPrompt = e; };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // Service Worker kaydet
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, u => setUser(u || null));
     return unsub;
+  }, []);
+
+  // Tema ve dil uygula
+  useEffect(() => {
+    if (!data) return;
+    const theme = data.settings?.theme || 'dark';
+    const lang  = data.settings?.lang  || 'tr';
+    Object.assign(C, THEMES[theme] || THEMES.dark);
+    Object.assign(T, LANGS[lang]   || LANGS.tr);
+    // HTML body rengi
+    document.body.style.background = C.bg;
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [data?.settings?.theme, data?.settings?.lang]);
+
+  // Fiyat alarm kontrol
+  useEffect(() => {
+    if (!data || Notification?.permission !== 'granted') return;
+    const alerts = data.settings?.priceAlerts || [];
+    if (!alerts.length) return;
+    const codes = alerts.map(a => a.code);
+    fetch('/api/prices', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({tickers: codes.map(c => `${c}.IS`)}),
+    }).then(r => r.json()).then(({prices}) => {
+      alerts.forEach(alert => {
+        const info = prices[alert.code];
+        if (!info?.price) return;
+        const triggered = alert.dir === 'ust'
+          ? info.price >= alert.price
+          : info.price <= alert.price;
+        if (triggered) {
+          new Notification(`${alert.code} Fiyat Alarmi`, {
+            body: `${alert.code} ${fmtD(info.price)}₺ ${alert.dir==='ust'?'ustune cikti':'altina dustu'}! Hedef: ${fmtD(alert.price)}₺`,
+            icon: '/icon-192.png',
+          });
+        }
+      });
+    }).catch(() => {});
   }, []);
 
   // Tekrarlayan islemleri uygula
@@ -2577,13 +3167,14 @@ export default function App() {
   const isAdmin = user?.uid === ADMIN_UID;
 
   const TABS = [
-    {id:'home',   icon:'◉', label:'Genel'},
-    {id:'news',   icon:'📰', label:'Haberler'},
-    {id:'stocks', icon:'📊', label:'Hisseler'},
-    {id:'budget', icon:'₺', label:'Butce'},
-    {id:'invest', icon:'↑', label:'Yatirim'},
-    {id:'stats',  icon:'▦', label:'Analiz'},
-    {id:'more',   icon:'⋯', label:'Daha'},
+    {id:'home',   icon:'◉', label:T.genel},
+    {id:'news',   icon:'📰', label:T.haberler},
+    {id:'stocks', icon:'📊', label:T.hisseler},
+    {id:'crypto', icon:'₿',  label:'Kripto'},
+    {id:'budget', icon:'₺', label:T.butce},
+    {id:'invest', icon:'↑', label:T.yatirim},
+    {id:'stats',  icon:'▦', label:T.analiz},
+    {id:'more',   icon:'⋯', label:T.daha},
   ];
 
   return (
