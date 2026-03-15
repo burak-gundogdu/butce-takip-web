@@ -58,8 +58,18 @@ const LANGS = {
     karanlik:'Karanlik', aydinlik:'Aydinlik',
     turkce:'Turkce', ingilizce:'Ingilizce',
     alarm:'Fiyat Alarmi', alarmEkle:'Alarm Ekle', alarmYok:'Alarm yok',
+    kripto:'Kripto',
     hedefFiyat:'Hedef Fiyat', ust:'Uste Cikarsa', alt:'Alta Duserse',
     cikisYap:'Cikis Yap', hesap:'Hesap',
+    toplamlBakiye:'TOPLAM BAKİYE', portfoyDegeri:'Portfoy Degeri',
+    aylikButce:'Aylik Butce', tasarrufHedefleri:'Tasarruf Hedefleri',
+    borcTakibi:'Borc Takibi', islemEkle:'Islem Ekle', tumIslemler:'Tum Islemler',
+    hizliEkle:'Hizli Ekle', butceYok:'Henuz islem yok',
+    canliKurlarBaslik:'Canli Kurlar', sonIslemler:'Son Islemler',
+    yatirimEkle:'Yatirim Ekle', portfoyDagilimi:'Portfoy Dagilimi',
+    tumPortfoyu:'Tum Portfoyu Guncelle', fiyatCek:'Fiyat Cek',
+    aktifGun:'Son 6 Ay', akillıAnaliz:'Akilli Analiz',
+    kategoriAnaliz:'Kategori Analizi',
   },
   en: {
     genel:'Home', haberler:'News', hisseler:'Stocks', butce:'Budget',
@@ -76,6 +86,16 @@ const LANGS = {
     karanlik:'Dark', aydinlik:'Light',
     turkce:'Turkish', ingilizce:'English',
     alarm:'Price Alert', alarmEkle:'Add Alert', alarmYok:'No alerts',
+    kripto:'Crypto',
+    toplamlBakiye:'TOTAL BALANCE', portfoyDegeri:'Portfolio Value',
+    aylikButce:'Monthly Budget', tasarrufHedefleri:'Savings Goals',
+    borcTakibi:'Debt Tracker', islemEkle:'Add Transaction', tumIslemler:'All Transactions',
+    hizliEkle:'Quick Add', butceYok:'No transactions yet',
+    canliKurlarBaslik:'Live Rates', sonIslemler:'Recent Transactions',
+    yatirimEkle:'Add Investment', portfoyDagilimi:'Portfolio Breakdown',
+    tumPortfoyu:'Update All', fiyatCek:'Get Price',
+    aktifGun:'Last 6 Months', akillıAnaliz:'Smart Analysis',
+    kategoriAnaliz:'Category Analysis',
     hedefFiyat:'Target Price', ust:'If rises above', alt:'If falls below',
     cikisYap:'Sign Out', hesap:'Account',
   },
@@ -269,7 +289,7 @@ function AuthScreen() {
             <button key={m} onClick={() => { setMode(m); setErr(''); }}
               style={{flex:1,padding:'10px',border:'none',borderRadius:9,cursor:'pointer',fontWeight:700,fontSize:13,
                 background: mode===m ? C.accent : 'transparent', color: mode===m ? '#0A0E1A' : C.muted, transition:'all 0.2s'}}>
-              {m === 'login' ? 'Giris Yap' : 'Kayit Ol'}
+              {m === 'login' ? T.lang === 'en' ? 'Sign In' : 'Giris Yap'}
             </button>
           ))}
         </div>
@@ -355,7 +375,7 @@ function HomeScreen({ data, setData, user }) {
       )}
       {/* Bakiye */}
       <Card style={{background:'#0D1B2A', borderColor:C.accentBg}}>
-        <span style={s.label}>TOPLAM BAKIYE</span>
+        <span style={s.label}>{T.toplamlBakiye||'TOPLAM BAKİYE'}</span>
         <div style={{fontSize:38,fontWeight:900,color:C.text,letterSpacing:-1,margin:'4px 0'}}>{fmt(bal)}</div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style={{color:gain>=0?C.accent:C.red,fontWeight:700,fontSize:13}}>
@@ -460,7 +480,7 @@ function HomeScreen({ data, setData, user }) {
       {/* Canli kurlar */}
       <Card>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-          <H title="Canli Kurlar" sub="Yahoo Finance" />
+          <H title={T.canliKurlarBaslik||"Canli Kurlar"} sub="Yahoo Finance" />
           <button onClick={loadRates} style={{background:C.border,border:'none',borderRadius:8,padding:'6px 12px',color:C.accent,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
             {rLoad ? <Spinner size={14}/> : '↺'} Guncelle
           </button>
@@ -523,7 +543,7 @@ function HomeScreen({ data, setData, user }) {
 
       {/* Son islemler */}
       <Card>
-        <H title="Son Islemler" />
+        <H title={T.sonIslemler||"Son Islemler"} />
         {data.transactions.length === 0 ? <div style={{...s.tiny,textAlign:'center',padding:'16px 0'}}>Henuz islem yok</div>
           : data.transactions.slice(0,7).map(t => (
             <div key={t.id} style={s.txRow}>
@@ -785,7 +805,22 @@ function InvestmentScreen({ data, setData }) {
     if(!alis) return;
     const name = itype==='Altin'?'Altin (gram)':itype==='Gumus'?'Gumus (gram)':(symbol.toUpperCase()||itype);
     const a=parseFloat(alis); const c=parseFloat(cur)||a; const ad=parseFloat(adet)||1;
-    setData(d=>({...d,investments:[...d.investments,{id:Date.now(),type:itype,name,symbol:symbol.toUpperCase(),adet:ad,amount:a,current:c,change:parseFloat((((c-a)/a)*100).toFixed(2))}]}));
+    const sym = symbol.toUpperCase();
+    setData(d => {
+      const existing = d.investments.find(i => i.type===itype && i.symbol===sym && sym !== '');
+      if (existing) {
+        // Üstüne ekle — ortalama maliyet hesapla
+        const totalAdet = (existing.adet||1) + ad;
+        const avgCost = ((existing.amount*(existing.adet||1)) + (a*ad)) / totalAdet;
+        const chg = parseFloat((((c-avgCost)/avgCost)*100).toFixed(2));
+        return {...d, investments: d.investments.map(i =>
+          i.id === existing.id
+            ? {...i, adet:totalAdet, amount:avgCost, current:c, change:chg}
+            : i
+        )};
+      }
+      return {...d, investments:[...d.investments,{id:Date.now(),type:itype,name,symbol:sym,adet:ad,amount:a,current:c,change:parseFloat((((c-a)/a)*100).toFixed(2))}]};
+    });
     setSym('');setAdet('');setAlis('');setCur('');
   };
   const del = id => setData(d=>({...d,investments:d.investments.filter(i=>i.id!==id)}));
@@ -1772,7 +1807,7 @@ function NewsFeedScreen({ user }) {
 
   // SADECE haber tipindekiler
   useEffect(()=>{
-    const q = query(collection(db,'announcements'), orderBy('createdAt','desc'), limit(100));
+    const q = query(collection(db,'announcements'), orderBy('createdAt','desc'), limit(300));
     const unsub = onSnapshot(q, snap=>{
       const docs = snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>d.tip==='haber');
       setAllCards(docs);
@@ -1784,17 +1819,19 @@ function NewsFeedScreen({ user }) {
 
   // Kategori filtresi
   const NEWS_CATS = [
-    {id:'all',label:'Tümü'},
-    {id:'💰 Ekonomi',label:'💰 Ekonomi'},
-    {id:'💵 Doviz',label:'💵 Döviz'},
-    {id:'📊 Piyasa',label:'📊 Piyasa'},
-    {id:'🏦 MB',label:'🏦 MB'},
-    {id:'🏢 Sirket',label:'🏢 Şirket'},
-    {id:'📋 KAP',label:'📋 KAP'},
-    {id:'🟢 Pozitif',label:'🟢 Pozitif'},
-    {id:'🔴 Riskli',label:'🔴 Riskli'},
+    {id:'all',label:'📰 Tümü', match: () => true},
+    {id:'doviz',label:'💵 Döviz', match: c => /dolar|euro|kur|döviz|usd|eur|sterlin/i.test(c.baslik+c.icerik)},
+    {id:'borsa',label:'📊 Borsa', match: c => /bist|hisse|borsa|endeks|xu100|piyasa/i.test(c.baslik+c.icerik)},
+    {id:'altin',label:'🥇 Altın', match: c => /altın|altin|gumus|gümüş|emtia/i.test(c.baslik+c.icerik)},
+    {id:'kripto',label:'₿ Kripto', match: c => /bitcoin|kripto|btc|eth|crypto/i.test(c.baslik+c.icerik)},
+    {id:'mb',label:'🏦 MB/Faiz', match: c => /faiz|merkez|tcmb|enflasyon|tüfe/i.test(c.baslik+c.icerik)},
+    {id:'sirket',label:'🏢 Şirket', match: c => /şirket|sirket|thyao|garan|kar|zarar|bilanço|halka arz/i.test(c.baslik+c.icerik)},
+    {id:'enerji',label:'⚡ Enerji', match: c => /petrol|doğalgaz|enerji|elektrik|opec/i.test(c.baslik+c.icerik)},
+    {id:'pozitif',label:'🟢 Pozitif', match: c => (c.etiket||'').includes('Pozitif') || (c.etiket||'').includes('Yukselis')},
+    {id:'riskli',label:'🔴 Riskli', match: c => (c.etiket||'').includes('Riskli') || (c.etiket||'').includes('Dusus')},
   ];
-  const filteredCards = catFilter === 'all' ? cards : cards.filter(c => c.etiket?.includes(catFilter));
+  const activeCatObj = NEWS_CATS.find(n => n.id === catFilter) || NEWS_CATS[0];
+  const filteredCards = catFilter === 'all' ? cards : cards.filter(activeCatObj.match);
   const current = filteredCards[idx];
   const progress = filteredCards.length ? (idx/filteredCards.length)*100 : 0;
 
@@ -2615,6 +2652,190 @@ function StocksScreen({ data, setData }) {
   );
 }
 
+
+// ─── KRİPTO EKRANI ─────────────────────────────────────────────────────────
+const TOP_CRYPTOS = [
+  {id:'bitcoin',   symbol:'BTC', name:'Bitcoin'},
+  {id:'ethereum',  symbol:'ETH', name:'Ethereum'},
+  {id:'binancecoin',symbol:'BNB', name:'BNB'},
+  {id:'solana',    symbol:'SOL', name:'Solana'},
+  {id:'ripple',    symbol:'XRP', name:'XRP'},
+  {id:'dogecoin',  symbol:'DOGE',name:'Dogecoin'},
+  {id:'cardano',   symbol:'ADA', name:'Cardano'},
+  {id:'avalanche-2',symbol:'AVAX',name:'Avalanche'},
+  {id:'polkadot',  symbol:'DOT', name:'Polkadot'},
+  {id:'tron',      symbol:'TRX', name:'TRON'},
+  {id:'shiba-inu', symbol:'SHIB',name:'Shiba Inu'},
+  {id:'chainlink', symbol:'LINK',name:'Chainlink'},
+  {id:'stellar',   symbol:'XLM', name:'Stellar'},
+  {id:'litecoin',  symbol:'LTC', name:'Litecoin'},
+  {id:'uniswap',   symbol:'UNI', name:'Uniswap'},
+];
+
+function CryptoScreen({ data, setData }) {
+  const [prices, setPrices]   = useState({});
+  const [usdTry, setUSD]      = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUp, setLastUp]   = useState(null);
+  const favs = data.settings?.favCryptos || [];
+
+  const toggleFav = (sym) => {
+    const nf = favs.includes(sym) ? favs.filter(f=>f!==sym) : [...favs, sym];
+    setData(d=>({...d, settings:{...d.settings, favCryptos:nf}}));
+  };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetchRates();
+      setUSD(r.usdTry);
+      // CoinGecko ücretsiz API
+      const ids = TOP_CRYPTOS.map(c=>c.id).join(',');
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`
+      );
+      const data = await res.json();
+      const newP = {};
+      TOP_CRYPTOS.forEach(c => {
+        if (data[c.id]) {
+          newP[c.symbol] = {
+            usd: data[c.id].usd,
+            try: data[c.id].usd * r.usdTry,
+            change: data[c.id].usd_24h_change,
+            mcap: data[c.id].usd_market_cap,
+          };
+        }
+      });
+      setPrices(newP);
+    } catch(e) {
+      // Fallback: Yahoo Finance
+      try {
+        const tickers = TOP_CRYPTOS.map(c=>`${c.symbol}-USD`).join(',');
+        const res = await fetch('/api/prices', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({tickers: TOP_CRYPTOS.map(c=>`${c.symbol}-USD`)}),
+        });
+        const {prices: yPrices} = await res.json();
+        const r2 = usdTry || 34;
+        const newP = {};
+        TOP_CRYPTOS.forEach(c => {
+          const key = `${c.symbol}-USD`;
+          if (yPrices[key]?.price) {
+            newP[c.symbol] = {
+              usd: yPrices[key].price,
+              try: yPrices[key].price * r2,
+              change: yPrices[key].change,
+            };
+          }
+        });
+        setPrices(newP);
+      } catch {}
+    }
+    setLoading(false);
+    setLastUp(new Date());
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // Portföydeki kripto varlıklar
+  const cryptoPortfolio = (data.investments||[]).filter(i=>i.type==='Kripto');
+  const cryptoVal = cryptoPortfolio.reduce((a,i)=>a+i.current*(i.adet||1),0);
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* Header */}
+      <div style={{padding:'10px 16px 8px',background:C.headerBg||'#0D1020',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+          <div>
+            <span style={{fontWeight:800,fontSize:14,color:C.text}}>Kripto Para</span>
+            {lastUp && <span style={{fontSize:10,color:C.muted,marginLeft:8}}>
+              {lastUp.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}
+            </span>}
+          </div>
+          <button onClick={load} disabled={loading}
+            style={{background:loading?C.border:C.purpleBg,border:`1px solid ${loading?C.border:C.purple}40`,
+              borderRadius:20,padding:'5px 12px',color:loading?C.muted:C.purple,
+              fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+            {loading?<Spinner size={12} color={C.purple}/>:'↺'} Guncelle
+          </button>
+        </div>
+        {cryptoVal > 0 && (
+          <div style={{background:C.purpleBg,border:`1px solid ${C.purple}40`,borderRadius:10,
+            padding:'6px 12px',fontSize:12,color:C.purple,fontWeight:700}}>
+            💼 Kripto Portföyüm: {fmt(cryptoVal)}
+          </div>
+        )}
+      </div>
+
+      {/* Liste */}
+      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+        {loading && Object.keys(prices).length === 0 ? (
+          <div style={{display:'flex',justifyContent:'center',padding:40}}><Spinner size={32} color={C.purple}/></div>
+        ) : (
+          TOP_CRYPTOS.map((crypto, i) => {
+            const info   = prices[crypto.symbol];
+            const isUp   = (info?.change||0) > 0;
+            const isDown = (info?.change||0) < 0;
+            const isFav  = favs.includes(crypto.symbol);
+            return (
+              <div key={crypto.symbol} style={{display:'flex',alignItems:'center',
+                padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+                {/* Sıra */}
+                <div style={{width:24,fontSize:11,color:C.muted,fontWeight:700,flexShrink:0}}>
+                  {i+1}
+                </div>
+                {/* Sembol + isim */}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontWeight:800,fontSize:14,color:C.text}}>{crypto.symbol}</span>
+                    {isFav && <span style={{fontSize:9,color:C.yellow}}>⭐</span>}
+                  </div>
+                  <div style={{fontSize:11,color:C.muted}}>{crypto.name}</div>
+                  {info?.mcap && (
+                    <div style={{fontSize:9,color:C.muted}}>
+                      MCap: ${(info.mcap/1e9).toFixed(1)}B
+                    </div>
+                  )}
+                </div>
+                {/* Fiyat */}
+                <div style={{textAlign:'right',marginRight:10}}>
+                  {info ? (
+                    <>
+                      <div style={{fontWeight:800,fontSize:13,color:C.text}}>
+                        {info.try >= 1
+                          ? `${fmtD(info.try,0)} ₺`
+                          : `${fmtD(info.try,4)} ₺`}
+                      </div>
+                      <div style={{fontSize:10,color:C.muted}}>
+                        ${info.usd >= 1 ? fmtD(info.usd,2) : fmtD(info.usd,6)}
+                      </div>
+                      {info.change != null && (
+                        <div style={{fontSize:11,fontWeight:700,
+                          color:isUp?C.accent:isDown?C.red:C.muted}}>
+                          {isUp?'▲':'▼'} %{Math.abs(info.change).toFixed(2)}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{color:C.border}}>—</div>
+                  )}
+                </div>
+                <button onClick={()=>toggleFav(crypto.symbol)}
+                  style={{background:'none',border:`1px solid ${isFav?C.yellow:C.border}`,
+                    borderRadius:20,padding:'5px 8px',cursor:'pointer',
+                    fontSize:13,color:isFav?C.yellow:C.muted,flexShrink:0}}>
+                  {isFav?'⭐':'☆'}
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── HİSSE DETAY MODALİ ────────────────────────────────────────────────────
 function StockDetailModal({ stock, onClose, isFav, onToggleFav }) {
   const [info, setInfo]   = useState(null);
@@ -3092,16 +3313,22 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Tema ve dil uygula
+  // Tema ve dil uygula - forceUpdate ile tüm ekranı yenile
+  const [themeKey, setThemeKey] = useState(0);
   useEffect(() => {
     if (!data) return;
     const theme = data.settings?.theme || 'dark';
     const lang  = data.settings?.lang  || 'tr';
-    Object.assign(C, THEMES[theme] || THEMES.dark);
-    Object.assign(T, LANGS[lang]   || LANGS.tr);
-    // HTML body rengi
-    document.body.style.background = C.bg;
-    document.documentElement.setAttribute('data-theme', theme);
+    const newC = THEMES[theme] || THEMES.dark;
+    const newT = LANGS[lang]   || LANGS.tr;
+    Object.keys(newC).forEach(k => { C[k] = newC[k]; });
+    Object.keys(newT).forEach(k => { T[k] = newT[k]; });
+    document.body.style.background = newC.bg;
+    document.body.style.color = newC.text;
+    document.documentElement.style.setProperty('--bg', newC.bg);
+    document.documentElement.style.setProperty('--card', newC.card);
+    document.documentElement.style.setProperty('--text', newC.text);
+    setThemeKey(k => k + 1); // force re-render
   }, [data?.settings?.theme, data?.settings?.lang]);
 
   // Fiyat alarm kontrol
@@ -3179,8 +3406,8 @@ export default function App() {
 
   return (
     <>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} * {-webkit-tap-highlight-color:transparent}`}</style>
-      <div style={s.app}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} * {-webkit-tap-highlight-color:transparent} body{background:${C.bg};transition:background 0.3s}`}</style>
+      <div key={themeKey} style={{...s.app, background:C.bg}}>
         {/* Header */}
         <div style={s.header}>
           {/* Uygulama basligi ve gelistirici */}
@@ -3206,7 +3433,7 @@ export default function App() {
           </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
-              <span style={s.label}>TOPLAM BAKIYE</span>
+              <span style={s.label}>{T.toplamlBakiye||'TOPLAM BAKİYE'}</span>
               <div style={{fontSize:28,fontWeight:900,color:C.text,letterSpacing:-1}}>{fmt(bal)}</div>
               <div style={{...s.tiny,marginTop:2}}>+{fmt(income)} gelir  —  -{fmt(spent)} gider</div>
             </div>
@@ -3224,6 +3451,7 @@ export default function App() {
           {tab==='home'   && <HomeScreen   data={data} setData={setData} user={user} />}
           {tab==='news'   && <NewsFeedScreen user={user} />}
           {tab==='stocks' && <StocksScreen data={data} setData={setData} />}
+          {tab==='crypto' && <CryptoScreen data={data} setData={setData} />}
           {tab==='budget' && <BudgetScreen data={data} setData={setData} />}
           {tab==='invest' && <InvestmentScreen data={data} setData={setData} />}
           {tab==='stats'  && <StatsScreen  data={data} />}
