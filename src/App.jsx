@@ -113,7 +113,7 @@ const INIT = {
 // ─── STİLLER ───────────────────────────────────────────────────────────────
 const s = {
   app: { display:'flex', flexDirection:'column', height:'100dvh', background:C.bg, maxWidth:480, margin:'0 auto', position:'relative', overflow:'hidden' },
-  header: { padding:'16px 20px 12px', background:'#0D1B2A', flexShrink:0 },
+  header: { padding:'16px 20px 12px', background:C.headerBg||C.card, flexShrink:0 },
   scrollArea: { flex:1, overflowY:'auto', padding:16, paddingBottom:24 },
   card: { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 },
   half: { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 },
@@ -831,16 +831,51 @@ function InvestmentScreen({ data, setData }) {
   };
   const del = id => setData(d=>({...d,investments:d.investments.filter(i=>i.id!==id)}));
 
+  // Aynı sembol/tip yatırımları birleştir
+  const mergeDuplicates = () => {
+    setData(d => {
+      const merged = {};
+      const order = [];
+      d.investments.forEach(inv => {
+        const key = inv.type==='Altin'||inv.type==='Gumus'
+          ? inv.type
+          : `${inv.type}_${inv.symbol||inv.name}`;
+        if (!merged[key]) {
+          merged[key] = {...inv};
+          order.push(key);
+        } else {
+          const ex = merged[key];
+          const totalAdet = (ex.adet||1) + (inv.adet||1);
+          const avgCost = ((ex.amount*(ex.adet||1)) + (inv.amount*(inv.adet||1))) / totalAdet;
+          merged[key] = {
+            ...ex,
+            adet: totalAdet,
+            amount: avgCost,
+            current: inv.current || ex.current,
+            change: parseFloat((((inv.current||ex.current) - avgCost) / avgCost * 100).toFixed(2)),
+          };
+        }
+      });
+      return {...d, investments: order.map(k => merged[k])};
+    });
+    alert('Aynı varlıklar birleştirildi!');
+  };
+
   return (
     <div style={s.scrollArea}>
-      <Card style={{background:'#0D1B2A',borderColor:C.accentBg}}>
+      <Card style={{background:C.card,borderColor:C.accentBg}}>
         <span style={s.label}>TOPLAM PORTFOY</span>
         <div style={{fontSize:32,fontWeight:900,color:C.text,marginBottom:4}}>{fmt(totalVal)}</div>
         <div style={{color:gain>=0?C.accent:C.red,fontWeight:700,fontSize:15,marginBottom:4}}>{gain>=0?'+':''}{fmt(gain)}  ({gain>=0?'+':''}{gainPct}%)</div>
         <Row label="Toplam Maliyet" value={fmt(totalCost)} />
-        <button onClick={bulkUpdate} style={{...s.btn,background:C.accentBg,border:`1px solid ${C.accent}`,color:C.accent,marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-          {bulkUpd?<Spinner size={16}/>:null} Tum Portfoyu Guncelle
-        </button>
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button onClick={bulkUpdate} style={{...s.btn,flex:1,background:C.accentBg,border:`1px solid ${C.accent}`,color:C.accent,marginTop:0,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+            {bulkUpd?<Spinner size={16}/>:null} Guncelle
+          </button>
+          <button onClick={mergeDuplicates} style={{...s.btn,flex:1,background:C.blueBg,border:`1px solid ${C.blue}`,color:C.blue,marginTop:0}}>
+            🔗 Birleştir
+          </button>
+        </div>
       </Card>
 
       {breakdown.length>1&&(
@@ -1612,7 +1647,7 @@ function AdminScreen({ user }) {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:C.bg}}>
       {/* Header */}
-      <div style={{background:'#0D0A1A',borderBottom:`1px solid ${C.purple}40`,padding:'10px 16px 0',flexShrink:0}}>
+      <div style={{background:C.card,borderBottom:`1px solid ${C.purple}40`,padding:'10px 16px 0',flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{width:8,height:8,borderRadius:4,background:C.purple,boxShadow:`0 0 8px ${C.purple}`}}/>
@@ -1898,7 +1933,7 @@ function NewsFeedScreen({ user }) {
   if(showSaved){
     return (
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:'#0D0A1A',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:C.card,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
           <button onClick={()=>setShowS(false)} style={{background:'none',border:'none',color:C.accent,fontSize:22,cursor:'pointer',lineHeight:1}}>←</button>
           <span style={{fontWeight:800,fontSize:14,color:C.text}}>Kaydedilenler ({saved.length})</span>
         </div>
@@ -2530,7 +2565,7 @@ function StocksScreen({ data, setData }) {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
-      <div style={{padding:'10px 16px 8px',background:'#0D1020',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+      <div style={{padding:'10px 16px 8px',background:C.card,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div>
             <span style={{fontWeight:800,fontSize:14,color:C.text}}>BIST Hisseleri</span>
@@ -2741,7 +2776,7 @@ function CryptoScreen({ data, setData }) {
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       {/* Header */}
-      <div style={{padding:'10px 16px 8px',background:'#0a0a1a',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+      <div style={{padding:'10px 16px 8px',background:C.card,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div>
             <span style={{fontWeight:800,fontSize:14,color:C.text}}>₿ Kripto Piyasası</span>
@@ -2885,11 +2920,23 @@ export default function App() {
     Object.keys(newC).forEach(k => { C[k] = newC[k]; });
     Object.keys(newT).forEach(k => { T[k] = newT[k]; });
     // s objesi yeniden hesapla (C değişti)
-    s.card = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 };
-    s.half = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 };
-    s.input = { background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:'12px', color:C.text, fontSize:14, width:'100%', marginBottom:0 };
-    s.btn = { background:C.accent, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:800, fontSize:14, color:'#0A0E1A', width:'100%', marginTop:10 };
-    s.btnSec = { background:C.border, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:700, fontSize:14, color:C.dim, width:'100%', marginTop:10 };
+    // s objesinin TÜM renk bağımlı alanlarını güncelle
+    s.app     = { ...s.app, background:C.bg };
+    s.header  = { padding:'16px 20px 12px', background:C.headerBg||C.card, flexShrink:0 };
+    s.nav     = { display:'flex', background:C.card, borderTop:`1px solid ${C.border}`, flexShrink:0 };
+    s.card    = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 };
+    s.half    = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 };
+    s.input   = { background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:'12px', color:C.text, fontSize:14, width:'100%', marginBottom:0 };
+    s.label   = { fontSize:10, color:C.muted, letterSpacing:'1.5px', marginBottom:4, display:'block' };
+    s.title   = { fontSize:15, fontWeight:700, color:C.text };
+    s.tiny    = { fontSize:11, color:C.muted, marginTop:2 };
+    s.body    = { fontSize:13, fontWeight:600, color:C.text };
+    s.bigN    = { fontSize:20, fontWeight:800, color:C.text };
+    s.btn     = { background:C.accent, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:800, fontSize:14, color:'#0A0E1A', width:'100%', marginTop:10 };
+    s.btnSec  = { background:C.border, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:700, fontSize:14, color:C.dim, width:'100%', marginTop:10 };
+    s.row     = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:`1px solid ${C.border}` };
+    s.txRow   = { display:'flex', alignItems:'center', padding:'10px 0', borderBottom:`1px solid ${C.border}` };
+    s.scrollArea = { flex:1, overflowY:'auto', padding:16, paddingBottom:24, background:C.bg };
     // CSS variables inject et (inline stil yerine tüm uygulama için)
     const root = document.documentElement;
     Object.keys(newC).forEach(k => root.style.setProperty(`--c-${k}`, newC[k]));

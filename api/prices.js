@@ -12,46 +12,71 @@ export default async function handler(req, res) {
   if (!tickerList.length) return res.status(400).json({ error: 'empty' });
 
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-  const headers = { 'User-Agent': UA, 'Accept': 'application/json', 'Accept-Language': 'en-US,en;q=0.9' };
+  const headers = { 'User-Agent': UA, 'Accept': 'application/json' };
   const prices = {};
 
-  // Method 1: Yahoo v7 bulk (query1)
-  try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickerList.join(','))}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketPreviousClose,shortName`;
-    const r = await fetch(url, { headers });
-    if (r.ok) {
-      const d = await r.json();
-      for (const q of (d?.quoteResponse?.result || [])) {
-        if (q.regularMarketPrice) prices[q.symbol] = { price: q.regularMarketPrice, change: q.regularMarketChangePercent ?? null, prev: q.regularMarketPreviousClose ?? null, name: q.shortName ?? null };
-      }
-    }
-  } catch {}
+  // Separate crypto (contains -USD) from stocks
+  const cryptoTickers = tickerList.filter(t => t.includes('-USD'));
+  const stockTickers  = tickerList.filter(t => !t.includes('-USD'));
 
-  // Method 2: Yahoo v7 bulk (query2) - missing ones
-  const miss1 = tickerList.filter(t => !prices[t]);
-  if (miss1.length) {
+  // ── Stocks: Yahoo v7 bulk ───────────────────────────────────────────────
+  if (stockTickers.length) {
     try {
-      const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(miss1.join(','))}&fields=regularMarketPrice,regularMarketChangePercent,shortName`;
+      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(stockTickers.join(','))}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketPreviousClose,shortName`;
       const r = await fetch(url, { headers });
       if (r.ok) {
         const d = await r.json();
         for (const q of (d?.quoteResponse?.result || [])) {
-          if (q.regularMarketPrice && !prices[q.symbol]) prices[q.symbol] = { price: q.regularMarketPrice, change: q.regularMarketChangePercent ?? null, prev: null, name: q.shortName ?? null };
+          if (q.regularMarketPrice != null) {
+            prices[q.symbol] = {
+              price: q.regularMarketPrice,
+              change: q.regularMarketChangePercent ?? null,
+              prev: q.regularMarketPreviousClose ?? null,
+              name: q.shortName ?? null,
+            };
+          }
         }
       }
     } catch {}
-  }
 
-  // Method 3: v8 chart - still missing, parallel
-  const miss2 = tickerList.filter(t => !prices[t]);
-  if (miss2.length) {
-    await Promise.all(miss2.map(async (ticker) => {
+    // Fallback: v8 for missing stocks
+    const missing = stockTickers.filter(t => !prices[t]);
+    await Promise.all(missing.map(async (ticker) => {
       try {
         const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`, { headers });
         if (!r.ok) return;
         const d = await r.json();
         const meta = d?.chart?.result?.[0]?.meta;
-        if (meta?.regularMarketPrice) prices[ticker] = { price: meta.regularMarketPrice, change: meta.regularMarketChangePercent ?? null, prev: meta.chartPreviousClose ?? null, name: meta.longName ?? null };
+        if (meta?.regularMarketPrice != null) {
+          prices[ticker] = { price: meta.regularMarketPrice, change: null, prev: meta.chartPreviousClose ?? null, name: meta.longName ?? null };
+        }
+      } catch {}
+    }));
+  }
+
+  // ── Crypto: Yahoo v8 chart (daha güvenilir kripto için) ─────────────────
+  if (cryptoTickers.length) {
+    await Promise.all(cryptoTickers.map(async (ticker) => {
+      try {
+        // v8 chart kripto için daha güvenilir
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`, { headers });
+        if (!r.ok) return;
+        const d = await r.json();
+        const meta = d?.chart?.result?.[0]?.meta;
+        if (meta?.regularMarketPrice != null) {
+          // Önceki fiyatı hesapla
+          const closes = d?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+          const prevClose = closes?.[closes.length - 2] ?? meta.chartPreviousClose;
+          const change = prevClose && prevClose > 0
+            ? ((meta.regularMarketPrice - prevClose) / prevClose) * 100
+            : null;
+          prices[ticker] = {
+            price: meta.regularMarketPrice,
+            change: change !== null ? parseFloat(change.toFixed(2)) : null,
+            prev: prevClose ?? null,
+            name: meta.longName ?? ticker.replace('-USD',''),
+          };
+        }
       } catch {}
     }));
   }
