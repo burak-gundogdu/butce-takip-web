@@ -273,7 +273,7 @@ function AuthScreen() {
   };
 
   return (
-    <div style={{display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',height:'100dvh',background:C.bg,padding:24}}>
+    <div style={{display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',height:'100dvh',background:C.bg,padding:24,color:C.text}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       {/* Logo */}
       <div style={{marginBottom:40,textAlign:'center'}}>
@@ -806,10 +806,16 @@ function InvestmentScreen({ data, setData }) {
     const name = itype==='Altin'?'Altin (gram)':itype==='Gumus'?'Gumus (gram)':(symbol.toUpperCase()||itype);
     const a=parseFloat(alis); const c=parseFloat(cur)||a; const ad=parseFloat(adet)||1;
     const sym = symbol.toUpperCase();
+    // Birleştirme anahtarı: Altın/Gümüş için sadece type, diğerleri için type+symbol
+    const mergeKey = (itype==='Altin'||itype==='Gumus') ? itype : (sym || null);
     setData(d => {
-      const existing = d.investments.find(i => i.type===itype && i.symbol===sym && sym !== '');
+      const existing = mergeKey
+        ? d.investments.find(i =>
+            i.type === itype &&
+            ((itype==='Altin'||itype==='Gumus') ? true : i.symbol === sym)
+          )
+        : null;
       if (existing) {
-        // Üstüne ekle — ortalama maliyet hesapla
         const totalAdet = (existing.adet||1) + ad;
         const avgCost = ((existing.amount*(existing.adet||1)) + (a*ad)) / totalAdet;
         const chg = parseFloat((((c-avgCost)/avgCost)*100).toFixed(2));
@@ -2655,453 +2661,6 @@ function StocksScreen({ data, setData }) {
 
 // ─── KRİPTO EKRANI ─────────────────────────────────────────────────────────
 const TOP_CRYPTOS = [
-  {id:'bitcoin',   symbol:'BTC', name:'Bitcoin'},
-  {id:'ethereum',  symbol:'ETH', name:'Ethereum'},
-  {id:'binancecoin',symbol:'BNB', name:'BNB'},
-  {id:'solana',    symbol:'SOL', name:'Solana'},
-  {id:'ripple',    symbol:'XRP', name:'XRP'},
-  {id:'dogecoin',  symbol:'DOGE',name:'Dogecoin'},
-  {id:'cardano',   symbol:'ADA', name:'Cardano'},
-  {id:'avalanche-2',symbol:'AVAX',name:'Avalanche'},
-  {id:'polkadot',  symbol:'DOT', name:'Polkadot'},
-  {id:'tron',      symbol:'TRX', name:'TRON'},
-  {id:'shiba-inu', symbol:'SHIB',name:'Shiba Inu'},
-  {id:'chainlink', symbol:'LINK',name:'Chainlink'},
-  {id:'stellar',   symbol:'XLM', name:'Stellar'},
-  {id:'litecoin',  symbol:'LTC', name:'Litecoin'},
-  {id:'uniswap',   symbol:'UNI', name:'Uniswap'},
-];
-
-function CryptoScreen({ data, setData }) {
-  const [prices, setPrices]   = useState({});
-  const [usdTry, setUSD]      = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [lastUp, setLastUp]   = useState(null);
-  const favs = data.settings?.favCryptos || [];
-
-  const toggleFav = (sym) => {
-    const nf = favs.includes(sym) ? favs.filter(f=>f!==sym) : [...favs, sym];
-    setData(d=>({...d, settings:{...d.settings, favCryptos:nf}}));
-  };
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const r = await fetchRates();
-      setUSD(r.usdTry);
-      // CoinGecko ücretsiz API
-      const ids = TOP_CRYPTOS.map(c=>c.id).join(',');
-      const res = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`
-      );
-      const data = await res.json();
-      const newP = {};
-      TOP_CRYPTOS.forEach(c => {
-        if (data[c.id]) {
-          newP[c.symbol] = {
-            usd: data[c.id].usd,
-            try: data[c.id].usd * r.usdTry,
-            change: data[c.id].usd_24h_change,
-            mcap: data[c.id].usd_market_cap,
-          };
-        }
-      });
-      setPrices(newP);
-    } catch(e) {
-      // Fallback: Yahoo Finance
-      try {
-        const tickers = TOP_CRYPTOS.map(c=>`${c.symbol}-USD`).join(',');
-        const res = await fetch('/api/prices', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({tickers: TOP_CRYPTOS.map(c=>`${c.symbol}-USD`)}),
-        });
-        const {prices: yPrices} = await res.json();
-        const r2 = usdTry || 34;
-        const newP = {};
-        TOP_CRYPTOS.forEach(c => {
-          const key = `${c.symbol}-USD`;
-          if (yPrices[key]?.price) {
-            newP[c.symbol] = {
-              usd: yPrices[key].price,
-              try: yPrices[key].price * r2,
-              change: yPrices[key].change,
-            };
-          }
-        });
-        setPrices(newP);
-      } catch {}
-    }
-    setLoading(false);
-    setLastUp(new Date());
-  };
-
-  useEffect(() => { load(); }, []);
-
-  // Portföydeki kripto varlıklar
-  const cryptoPortfolio = (data.investments||[]).filter(i=>i.type==='Kripto');
-  const cryptoVal = cryptoPortfolio.reduce((a,i)=>a+i.current*(i.adet||1),0);
-
-  return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      {/* Header */}
-      <div style={{padding:'10px 16px 8px',background:C.headerBg||'#0D1020',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-          <div>
-            <span style={{fontWeight:800,fontSize:14,color:C.text}}>Kripto Para</span>
-            {lastUp && <span style={{fontSize:10,color:C.muted,marginLeft:8}}>
-              {lastUp.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}
-            </span>}
-          </div>
-          <button onClick={load} disabled={loading}
-            style={{background:loading?C.border:C.purpleBg,border:`1px solid ${loading?C.border:C.purple}40`,
-              borderRadius:20,padding:'5px 12px',color:loading?C.muted:C.purple,
-              fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
-            {loading?<Spinner size={12} color={C.purple}/>:'↺'} Guncelle
-          </button>
-        </div>
-        {cryptoVal > 0 && (
-          <div style={{background:C.purpleBg,border:`1px solid ${C.purple}40`,borderRadius:10,
-            padding:'6px 12px',fontSize:12,color:C.purple,fontWeight:700}}>
-            💼 Kripto Portföyüm: {fmt(cryptoVal)}
-          </div>
-        )}
-      </div>
-
-      {/* Liste */}
-      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
-        {loading && Object.keys(prices).length === 0 ? (
-          <div style={{display:'flex',justifyContent:'center',padding:40}}><Spinner size={32} color={C.purple}/></div>
-        ) : (
-          TOP_CRYPTOS.map((crypto, i) => {
-            const info   = prices[crypto.symbol];
-            const isUp   = (info?.change||0) > 0;
-            const isDown = (info?.change||0) < 0;
-            const isFav  = favs.includes(crypto.symbol);
-            return (
-              <div key={crypto.symbol} style={{display:'flex',alignItems:'center',
-                padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
-                {/* Sıra */}
-                <div style={{width:24,fontSize:11,color:C.muted,fontWeight:700,flexShrink:0}}>
-                  {i+1}
-                </div>
-                {/* Sembol + isim */}
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <span style={{fontWeight:800,fontSize:14,color:C.text}}>{crypto.symbol}</span>
-                    {isFav && <span style={{fontSize:9,color:C.yellow}}>⭐</span>}
-                  </div>
-                  <div style={{fontSize:11,color:C.muted}}>{crypto.name}</div>
-                  {info?.mcap && (
-                    <div style={{fontSize:9,color:C.muted}}>
-                      MCap: ${(info.mcap/1e9).toFixed(1)}B
-                    </div>
-                  )}
-                </div>
-                {/* Fiyat */}
-                <div style={{textAlign:'right',marginRight:10}}>
-                  {info ? (
-                    <>
-                      <div style={{fontWeight:800,fontSize:13,color:C.text}}>
-                        {info.try >= 1
-                          ? `${fmtD(info.try,0)} ₺`
-                          : `${fmtD(info.try,4)} ₺`}
-                      </div>
-                      <div style={{fontSize:10,color:C.muted}}>
-                        ${info.usd >= 1 ? fmtD(info.usd,2) : fmtD(info.usd,6)}
-                      </div>
-                      {info.change != null && (
-                        <div style={{fontSize:11,fontWeight:700,
-                          color:isUp?C.accent:isDown?C.red:C.muted}}>
-                          {isUp?'▲':'▼'} %{Math.abs(info.change).toFixed(2)}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{color:C.border}}>—</div>
-                  )}
-                </div>
-                <button onClick={()=>toggleFav(crypto.symbol)}
-                  style={{background:'none',border:`1px solid ${isFav?C.yellow:C.border}`,
-                    borderRadius:20,padding:'5px 8px',cursor:'pointer',
-                    fontSize:13,color:isFav?C.yellow:C.muted,flexShrink:0}}>
-                  {isFav?'⭐':'☆'}
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── HİSSE DETAY MODALİ ────────────────────────────────────────────────────
-function StockDetailModal({ stock, onClose, isFav, onToggleFav }) {
-  const [info, setInfo]   = useState(null);
-  const [loading, setL]   = useState(true);
-  const [history, setHist] = useState([]);
-
-  useEffect(() => {
-    if (!stock) return;
-    setL(true);
-    // Fiyat + 1 aylik gecmis
-    Promise.all([
-      fetch(`/api/price?ticker=${stock.code}.IS`).then(r=>r.json()),
-      fetch(`/api/prices?tickers=${stock.code}.IS`).then(r=>r.json()),
-    ]).then(([p, bulk]) => {
-      const priceData = bulk.prices?.[stock.code] || {};
-      setInfo({
-        price: priceData.price || p.price,
-        change: priceData.change,
-        prev: priceData.prev,
-        name: priceData.name || stock.name,
-      });
-      setL(false);
-    }).catch(() => setL(false));
-  }, [stock?.code]);
-
-  if (!stock) return null;
-  const isUp = (info?.change || 0) > 0;
-  const isDown = (info?.change || 0) < 0;
-
-  return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:100,
-      display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
-      <div style={{background:C.card,borderRadius:'20px 20px 0 0',border:`1px solid ${C.border}`,
-        maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
-        {/* Header */}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-          padding:'16px 20px',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-          <div>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontWeight:900,fontSize:20,color:C.text}}>{stock.code}</span>
-              <span style={{fontSize:11,color:C.muted,background:C.border,borderRadius:20,padding:'2px 8px'}}>
-                {stock.sektor}
-              </span>
-              <button onClick={onToggleFav}
-                style={{background:'none',border:'none',cursor:'pointer',fontSize:18,
-                  color:isFav?C.yellow:C.muted}}>
-                {isFav?'⭐':'☆'}
-              </button>
-            </div>
-            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{info?.name || stock.name}</div>
-          </div>
-          <button onClick={onClose}
-            style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,
-              cursor:'pointer',color:C.text,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>
-            ×
-          </button>
-        </div>
-
-        <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
-          {loading ? (
-            <div style={{display:'flex',justifyContent:'center',padding:40}}><Spinner size={32}/></div>
-          ) : (
-            <>
-              {/* Fiyat */}
-              <div style={{background:isUp?C.accentBg:isDown?C.redBg:C.bg,borderRadius:16,padding:20,marginBottom:16,
-                border:`1px solid ${isUp?C.accent:isDown?C.red:C.border}`}}>
-                <div style={{fontSize:10,color:C.muted,letterSpacing:'1px',marginBottom:4}}>GÜNCEL FİYAT</div>
-                <div style={{fontSize:36,fontWeight:900,color:C.text}}>
-                  {info?.price ? `${fmtD(info.price)} ₺` : '—'}
-                </div>
-                {info?.change != null && (
-                  <div style={{fontSize:15,fontWeight:700,color:isUp?C.accent:isDown?C.red:C.muted,marginTop:4}}>
-                    {isUp?'▲':'▼'} %{Math.abs(info.change).toFixed(2)}
-                    {info.prev && <span style={{fontSize:12,color:C.muted,marginLeft:8}}>
-                      Önceki: {fmtD(info.prev)} ₺
-                    </span>}
-                  </div>
-                )}
-              </div>
-
-              {/* Bilgiler */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
-                {[
-                  {l:'Borsa',v:'BIST'},
-                  {l:'Sektör',v:stock.sektor},
-                  {l:'Sembol',v:`${stock.code}.IS`},
-                  {l:'Favori',v:isFav?'⭐ Evet':'—'},
-                ].map((item,i) => (
-                  <div key={i} style={{background:C.bg,borderRadius:12,padding:'10px 12px',border:`1px solid ${C.border}`}}>
-                    <div style={{fontSize:10,color:C.muted}}>{item.l}</div>
-                    <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:2}}>{item.v}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Portföye ekle kısayolu */}
-              <div style={{background:C.blueBg,borderRadius:14,padding:14,border:`1px solid ${C.blue}40`}}>
-                <div style={{fontSize:12,color:C.blue,fontWeight:700,marginBottom:4}}>💡 Portföye Ekle</div>
-                <div style={{fontSize:12,color:C.dim}}>
-                  Bu hisseyi Yatırım ekranından portföyüne ekleyebilirsin.
-                  Sembol: <strong style={{color:C.text}}>{stock.code}</strong>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── HABER YORUMLARI ────────────────────────────────────────────────────────
-// Kucuk yorum ozeti - kart altinda sabit gorunsun
-function CommentsSummary({ newsId, onOpenFull }) {
-  const [comments, setComments] = useState([]);
-  useEffect(() => {
-    if (!newsId) return;
-    const q = query(collection(db,'comments'), orderBy('createdAt','desc'), limit(100));
-    const unsub = onSnapshot(q, snap => {
-      setComments(snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.newsId===newsId));
-    });
-    return unsub;
-  }, [newsId]);
-  if (comments.length === 0) return (
-    <button onClick={onOpenFull}
-      style={{width:'100%',background:'transparent',border:`1px dashed ${C.border}`,borderRadius:10,
-        padding:'8px',color:C.muted,fontSize:12,cursor:'pointer',textAlign:'center'}}>
-      💬 Ilk yorumu sen yap!
-    </button>
-  );
-  return (
-    <div style={{borderTop:`1px solid ${C.border}`,paddingTop:8}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-        <span style={{fontSize:11,color:C.muted,fontWeight:700}}>💬 {comments.length} YORUM</span>
-        <button onClick={onOpenFull}
-          style={{background:'none',border:'none',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
-          Tumunu Gor →
-        </button>
-      </div>
-      {comments.slice(0,2).map(c => (
-        <div key={c.id} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:5}}>
-          <div style={{width:6,height:6,borderRadius:3,background:C.accent,marginTop:5,flexShrink:0}}/>
-          <div style={{flex:1}}>
-            <span style={{fontWeight:700,fontSize:11,color:C.accent}}>
-              {c.name}
-              {c.isOnline && <span style={{display:'inline-block',width:5,height:5,borderRadius:3,background:'#22c55e',marginLeft:4}}/>}
-            </span>
-            <span style={{fontSize:11,color:C.dim,marginLeft:5}}>{c.text?.slice(0,60)}{c.text?.length>60?'...':''}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CommentsModal({ newsId, newsTitle, user, onClose }) {
-  const [comments, setComments] = useState([]);
-  const [text, setText]         = useState('');
-  const [sending, setSending]   = useState(false);
-  const userName = user?.displayName || user?.email?.split('@')[0] || 'Anonim';
-  const userId   = user?.uid || '';
-  const bottomRef = useRef(null);
-
-  useEffect(() => {
-    if (!newsId) return;
-    const q = query(collection(db,'comments'), orderBy('createdAt','asc'), limit(100));
-    const unsub = onSnapshot(q, snap => {
-      setComments(snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.newsId===newsId));
-    });
-    return unsub;
-  }, [newsId]);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:'smooth'}); }, [comments]);
-
-  // Kullanici acik oldugunda online isle
-  useEffect(() => {
-    if (!newsId || !userId) return;
-    const ref = doc(db, 'presence', userId);
-    setDoc(ref, { online: true, newsId, updatedAt: serverTimestamp() }, { merge: true }).catch(()=>{});
-    return () => { setDoc(ref, { online: false }, { merge: true }).catch(()=>{}); };
-  }, [newsId, userId]);
-
-  const submit = async () => {
-    if (!text.trim()) return;
-    setSending(true);
-    try {
-      await addDoc(collection(db, 'comments'), {
-        newsId,
-        name: userName,
-        userId,
-        text: text.trim().slice(0,300),
-        createdAt: serverTimestamp(),
-      });
-      setText('');
-    } catch(e) { alert('Hata: '+e.message); }
-    setSending(false);
-  };
-
-  return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
-      <div style={{background:C.card,borderRadius:'20px 20px 0 0',border:`1px solid ${C.border}`,maxHeight:'80vh',display:'flex',flexDirection:'column'}}>
-        {/* Header */}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 20px',borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-          <div>
-            <div style={{fontWeight:800,fontSize:14,color:C.text}}>💬 Yorumlar ({comments.length})</div>
-            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{newsTitle?.slice(0,50)}</div>
-          </div>
-          <button onClick={onClose} style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',color:C.text,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
-        </div>
-        {/* Kim yazıyor - kendi adı */}
-        <div style={{padding:'8px 20px',background:`${C.accent}08`,borderBottom:`1px solid ${C.border}`,flexShrink:0,display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:8,height:8,borderRadius:4,background:'#22c55e'}}/>
-          <span style={{fontSize:12,color:C.accent,fontWeight:700}}>{userName}</span>
-          <span style={{fontSize:11,color:C.muted}}>olarak yorum yapıyorsun</span>
-        </div>
-        {/* Yorumlar */}
-        <div style={{flex:1,overflowY:'auto',padding:'12px 16px'}}>
-          {comments.length===0 && (
-            <div style={{textAlign:'center',padding:'32px 16px',color:C.muted}}>
-              <div style={{fontSize:36,marginBottom:8}}>💬</div>
-              <div style={{fontWeight:700,color:C.dim}}>Henuz yorum yok</div>
-              <div style={{fontSize:12,marginTop:4}}>Ilk yorumu sen yap!</div>
-            </div>
-          )}
-          {comments.map(c => {
-            const isMe = c.userId === userId;
-            return (
-              <div key={c.id} style={{display:'flex',justifyContent:isMe?'flex-end':'flex-start',marginBottom:10}}>
-                <div style={{maxWidth:'80%',background:isMe?C.accentBg:C.bg,
-                  borderRadius:14,borderBottomRightRadius:isMe?3:14,borderBottomLeftRadius:isMe?14:3,
-                  padding:'8px 12px',border:`1px solid ${isMe?C.accent+'40':C.border}`}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
-                    <span style={{fontWeight:700,fontSize:12,color:isMe?C.accent:C.blue}}>{c.name}</span>
-                    <span style={{fontSize:9,color:C.muted}}>
-                      {c.createdAt?.toDate?.()?.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})||''}
-                    </span>
-                  </div>
-                  <div style={{fontSize:13,color:C.text,lineHeight:'18px'}}>{c.text}</div>
-                </div>
-              </div>
-            );
-          })}
-          <div ref={bottomRef}/>
-        </div>
-        {/* Yorum yaz */}
-        <div style={{padding:'10px 16px 20px',borderTop:`1px solid ${C.border}`,flexShrink:0}}>
-          <div style={{display:'flex',gap:8}}>
-            <input style={{...s.input,flex:1}} placeholder="Yorumunuzu yazin..."
-              value={text} onChange={e=>setText(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&submit()} maxLength={300}/>
-            <button onClick={submit} disabled={sending||!text.trim()}
-              style={{background:sending||!text.trim()?C.border:C.accent,border:'none',
-                borderRadius:12,padding:'0 16px',fontWeight:800,
-                color:sending||!text.trim()?C.muted:'#0A0E1A',
-                cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',gap:6}}>
-              {sending?<Spinner size={14}/>:'↑'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── KRİPTO EKRANI ─────────────────────────────────────────────────────────
-const TOP_CRYPTOS = [
   {sym:'BTC-USD',  name:'Bitcoin',       icon:'₿'},
   {sym:'ETH-USD',  name:'Ethereum',      icon:'Ξ'},
   {sym:'BNB-USD',  name:'BNB',           icon:'🔶'},
@@ -3313,22 +2872,31 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Tema ve dil uygula - forceUpdate ile tüm ekranı yenile
+  // Tema ve dil uygula
   const [themeKey, setThemeKey] = useState(0);
+  const [activeTheme, setActiveTheme] = useState('dark');
   useEffect(() => {
     if (!data) return;
     const theme = data.settings?.theme || 'dark';
     const lang  = data.settings?.lang  || 'tr';
     const newC = THEMES[theme] || THEMES.dark;
     const newT = LANGS[lang]   || LANGS.tr;
+    // C ve T objeleri güncelle
     Object.keys(newC).forEach(k => { C[k] = newC[k]; });
     Object.keys(newT).forEach(k => { T[k] = newT[k]; });
+    // s objesi yeniden hesapla (C değişti)
+    s.card = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 };
+    s.half = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 };
+    s.input = { background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:'12px', color:C.text, fontSize:14, width:'100%', marginBottom:0 };
+    s.btn = { background:C.accent, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:800, fontSize:14, color:'#0A0E1A', width:'100%', marginTop:10 };
+    s.btnSec = { background:C.border, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:700, fontSize:14, color:C.dim, width:'100%', marginTop:10 };
+    // CSS variables inject et (inline stil yerine tüm uygulama için)
+    const root = document.documentElement;
+    Object.keys(newC).forEach(k => root.style.setProperty(`--c-${k}`, newC[k]));
     document.body.style.background = newC.bg;
     document.body.style.color = newC.text;
-    document.documentElement.style.setProperty('--bg', newC.bg);
-    document.documentElement.style.setProperty('--card', newC.card);
-    document.documentElement.style.setProperty('--text', newC.text);
-    setThemeKey(k => k + 1); // force re-render
+    setActiveTheme(theme);
+    setThemeKey(k => k + 1);
   }, [data?.settings?.theme, data?.settings?.lang]);
 
   // Fiyat alarm kontrol
@@ -3407,7 +2975,7 @@ export default function App() {
   return (
     <>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} * {-webkit-tap-highlight-color:transparent} body{background:${C.bg};transition:background 0.3s}`}</style>
-      <div key={themeKey} style={{...s.app, background:C.bg}}>
+      <div key={themeKey} style={{...s.app, background:C.bg, color:C.text}}>
         {/* Header */}
         <div style={s.header}>
           {/* Uygulama basligi ve gelistirici */}
