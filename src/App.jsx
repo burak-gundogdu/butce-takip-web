@@ -3091,8 +3091,8 @@ export default function App() {
     // Body'yi güncelle
     document.body.style.cssText = `background:${newC.bg}!important;color:${newC.text}!important;`;
     // CSS variables inject et (inline stil yerine tüm uygulama için)
-    const root = document.documentElement;
-    Object.keys(newC).forEach(k => root.style.setProperty(`--c-${k}`, newC[k]));
+    const themeRoot = document.documentElement;
+    Object.keys(newC).forEach(k => themeRoot.style.setProperty(`--c-${k}`, newC[k]));
     document.body.style.background = newC.bg;
     document.body.style.color = newC.text;
     setActiveTheme(theme);
