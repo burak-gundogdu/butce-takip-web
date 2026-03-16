@@ -205,8 +205,7 @@ def analyze_with_ai(news_items):
         lines.append(f"[{i['source']}] {i['title']}{desc} |URL={i.get('url','')}| |IMG={i.get('image','')}| HASH={i['hash']}")
     news_text = "\n".join(lines)
 
-    # --- YAPAY ZEKA PROMPTU GÜNCELLENDİ ---
-    count = min(15, len(news_items)) # 15 haber seçsin ki magazin ve globale yer kalsın
+    count = min(15, len(news_items))
     prompt = f"""Sen uzman bir haber editorusun.
 Asagidaki {len(news_items)} haberden EN ONEMLI ve DIKKAT CEKICI {count} tanesini sec.
 Secimlerinde MUTLAKA su 3 ana kategoriden karma yapmalisin:
@@ -244,7 +243,24 @@ Tam {count} farkli konuda haber sec."""
             }).json()
 
         raw = res["choices"][0]["message"]["content"]
-clean = re.sub(r'`{3}[a-z]*\n?|`{3}|\*\*(.+?)\*\*', lambda m: m.group(1) or '', raw).strip()
+        
+        # HATA VEREN KISIM BURASIYDI: Artik Regex yerine guvenli replace kullaniyoruz
+        clean = raw.replace("```json", "").replace("```", "").strip()
+        
+        match = re.search(r'\[[\s\S]*\]', clean)
+        if match:
+            result = json.loads(match.group(0))
+            for item in result:
+                item["url"]   = re.sub(r'URL=\s*|\|', '', item.get("url","")).strip()
+                item["image"] = re.sub(r'IMG=\s*|\|', '', item.get("image","")).strip()
+                item["titleHash"] = re.sub(r'HASH=\s*', '', item.get("titleHash","")).strip()
+            print(f"  AI {len(result)} haber secti")
+            return result
+        print("  JSON bulunamadi:", clean[:200])
+        return []
+    except Exception as e:
+        print(f"  AI hatasi: {e}")
+        return []
 http://googleusercontent.com/immersive_entry_chip/0
 
 ### Neler Değişti?
