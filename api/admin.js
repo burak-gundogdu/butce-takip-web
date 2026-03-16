@@ -55,7 +55,7 @@ ${newsContext}`;
 
   try {
     // HATA VEREN KISIM DUZELTILDI: gemini-1.5-flash-latest eklendi
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     
     const payload = {
       contents: [{ parts: [{ text: `${ADMIN_SYSTEM}\n\nKullanici Komutu: ${command}` }] }],
