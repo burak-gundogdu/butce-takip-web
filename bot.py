@@ -5,13 +5,13 @@ FIREBASE_API_KEY    = os.environ.get("FIREBASE_API_KEY")
 FIREBASE_PROJECT_ID = "butce-takip-d3682"
 FIREBASE_EMAIL      = os.environ.get("FIREBASE_EMAIL")
 FIREBASE_PASSWORD   = os.environ.get("FIREBASE_PASSWORD")
-GROQ_API_KEY        = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY      = os.environ.get("GEMINI_API_KEY") # GROQ yerine GEMINI geldi
 
 UA_LIST = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15",
-    "Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)",
-    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Feedfetcher-Google; (+[http://www.google.com/feedfetcher.html](http://www.google.com/feedfetcher.html))",
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +[http://www.google.com/bot.html](http://www.google.com/bot.html))",
 ]
 
 def get_headers(i=0):
@@ -42,7 +42,7 @@ def is_similar(title1, title2, threshold=0.5):
     return (overlap / smaller) >= threshold if smaller > 0 else False
 
 def get_firebase_token():
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
+    url = f"[https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=](https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=){FIREBASE_API_KEY}"
     res = requests.post(url, json={"email":FIREBASE_EMAIL,"password":FIREBASE_PASSWORD,"returnSecureToken":True},timeout=10).json()
     if "idToken" not in res:
         raise Exception(f"Firebase giris basarisiz: {res}")
@@ -109,31 +109,27 @@ def fetch_all_news():
     seen_hashes = set()
     seen_titles = [] 
 
-    # Kaynaklar (Ekonomi kisildi, Magazin ve Sosyal Medya artirildi)
     sources = [
-        # Ekonomi (Temel Olanlar)
-        ("Bloomberg HT",     "https://www.bloomberght.com/rss",                         1),
-        ("Haberturk Eko",    "https://www.haberturk.com/rss/kategori/ekonomi.xml",      2),
-        
+        # Ekonomi
+        ("Bloomberg HT",     "[https://www.bloomberght.com/rss](https://www.bloomberght.com/rss)",                         1),
+        ("Haberturk Eko",    "[https://www.haberturk.com/rss/kategori/ekonomi.xml](https://www.haberturk.com/rss/kategori/ekonomi.xml)",      2),
         # Global
-        ("BBC Turkce",       "https://feeds.bbci.co.uk/turkce/rss.xml",                 0),
-        
-        # Teknoloji & Sosyal Medya Fenomenleri (Webtekno cikarildi, saglamlar eklendi)
-        ("ShiftDelete",      "https://shiftdelete.net/feed",                            1),
-        ("DonanimHaber",     "https://www.donanimhaber.com/rss/tum/",                   2),
-        ("Log.com.tr",       "https://www.log.com.tr/feed/",                            3),
-        
-        # Magazin, Dizi, Unluler & Sosyal Medya Dedikodulari
-        ("Hurriyet Mag",     "https://www.hurriyet.com.tr/rss/magazin",                 0),
-        ("Haberturk Mag",    "https://www.haberturk.com/rss/kategori/magazin.xml",      1),
-        ("Posta Magazin",    "https://www.posta.com.tr/rss/magazin",                    2),
-        ("Sabah Magazin",    "https://www.sabah.com.tr/rss/magazin.xml",                3),
-        ("Ensonhaber Mag",   "https://www.ensonhaber.com/rss/magazin.xml",              0),
-        ("Medyatava",        "https://www.medyatava.com/rss",                           1),
+        ("BBC Turkce",       "[https://feeds.bbci.co.uk/turkce/rss.xml](https://feeds.bbci.co.uk/turkce/rss.xml)",                 0),
+        # Teknoloji & Sosyal Medya
+        ("ShiftDelete",      "[https://shiftdelete.net/feed](https://shiftdelete.net/feed)",                            1),
+        ("DonanimHaber",     "[https://www.donanimhaber.com/rss/tum/](https://www.donanimhaber.com/rss/tum/)",                   2),
+        ("Log.com.tr",       "[https://www.log.com.tr/feed/](https://www.log.com.tr/feed/)",                            3),
+        # Magazin, Unluler & Sosyal Medya Dedikodulari
+        ("Hurriyet Mag",     "[https://www.hurriyet.com.tr/rss/magazin](https://www.hurriyet.com.tr/rss/magazin)",                 0),
+        ("Haberturk Mag",    "[https://www.haberturk.com/rss/kategori/magazin.xml](https://www.haberturk.com/rss/kategori/magazin.xml)",      1),
+        ("Posta Magazin",    "[https://www.posta.com.tr/rss/magazin](https://www.posta.com.tr/rss/magazin)",                    2),
+        ("Sabah Magazin",    "[https://www.sabah.com.tr/rss/magazin.xml](https://www.sabah.com.tr/rss/magazin.xml)",                3),
+        ("Ensonhaber Mag",   "[https://www.ensonhaber.com/rss/magazin.xml](https://www.ensonhaber.com/rss/magazin.xml)",              0),
+        ("Medyatava",        "[https://www.medyatava.com/rss](https://www.medyatava.com/rss)",                           1),
     ]
 
     for name, url, ua_idx in sources:
-        items = fetch_rss_direct(name, url, ua_idx, limit=12) # Kaynak basina haberi 12'ye cikardik
+        items = fetch_rss_direct(name, url, ua_idx, limit=12)
         added = 0
         for item in items:
             if item["hash"] in seen_hashes:
@@ -156,7 +152,7 @@ def fetch_all_news():
     return all_items
 
 def get_existing_data(token):
-    url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements?pageSize=150"
+    url = f"[https://firestore.googleapis.com/v1/projects/](https://firestore.googleapis.com/v1/projects/){FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements?pageSize=150"
     try:
         res = requests.get(url, headers={"Authorization":f"Bearer {token}"}, timeout=10).json()
         hashes = set()
@@ -172,7 +168,7 @@ def get_existing_data(token):
         return set(), []
 
 def delete_old_news(token):
-    url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements?pageSize=150"
+    url = f"[https://firestore.googleapis.com/v1/projects/](https://firestore.googleapis.com/v1/projects/){FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements?pageSize=150"
     headers = {"Authorization": f"Bearer {token}"}
     try:
         res = requests.get(url, headers=headers, timeout=10).json()
@@ -187,7 +183,7 @@ def delete_old_news(token):
             try:
                 ts = time.mktime(time.strptime(ts_str[:19], '%Y-%m-%dT%H:%M:%S'))
                 if ts < cutoff:
-                    requests.delete(f"https://firestore.googleapis.com/v1/{doc['name']}", headers=headers, timeout=5)
+                    requests.delete(f"[https://firestore.googleapis.com/v1/](https://firestore.googleapis.com/v1/){doc['name']}", headers=headers, timeout=5)
                     deleted += 1
                     time.sleep(0.1)
             except: pass
@@ -199,7 +195,10 @@ def analyze_with_ai(news_items):
     if not news_items:
         return []
 
-    # AI'in magazin haberlerini es gecmemesi icin listeyi rastgele karistiriyoruz
+    if not GEMINI_API_KEY:
+        print("  HATA: GEMINI_API_KEY bulunamadi! Github Secrets'i kontrol et.")
+        return []
+
     items_copy = list(news_items)
     random.shuffle(items_copy)
 
@@ -207,22 +206,24 @@ def analyze_with_ai(news_items):
     for i in items_copy:
         desc = f" | {i['description'][:80]}" if i.get('description') else ""
         lines.append(f"[{i['source']}] {i['title']}{desc} |URL={i.get('url','')}| |IMG={i.get('image','')}| HASH={i['hash']}")
+    
+    # Gemini'nin dev hafizasi sayesinde butun haberleri okutabiliriz!
     news_text = "\n".join(lines)
 
     count = min(15, len(items_copy))
     prompt = f"""Sen uzman bir haber editorusun.
-Asagidaki {len(items_copy)} haberden EN ONEMLI ve DIKKAT CEKICI {count} tanesini sec.
+Asagidaki haber havuzundan EN ONEMLI ve DIKKAT CEKICI {count} tanesini sec.
 Secimlerinde MUTLAKA su 3 ana kategoriden karma yapmalisin:
 1. Turkiye Ekonomisi ve Borsa
 2. Global Ekonomi ve Kuresel Haberler
 3. Magazin, Sosyal Medya, Youtuber, Influencer ve Populer Kultur (DIKKAT: EN AZ 5 TANE MAGAZIN/SOSYAL MEDYA HABERI SECMEK ZORUNDASIN)
 
-SADECE JSON dizisi don - [ ile basla ] ile bit, baska hicbir sey yazma:
+SADECE asagidaki formatta bir JSON dizisi dondur:
 
 [{{
   "baslik": "Max 65 karakter etkileyici baslik",
   "icerik": "3 cumlelik detayli ozet. Magazin/sosyal medya haberiyse kimin ne yaptigini net yaz.",
-  "analiz": "Okuyucu icin 2 cumlelik somut cikarim. (Orn: Bu olay su anlama geliyor...)",
+  "analiz": "Okuyucu icin 2 cumlelik somut cikarim.",
   "etiket": "⭐ Magazin",
   "tip": "haber",
   "kaynak": "kaynak ismi",
@@ -234,42 +235,37 @@ SADECE JSON dizisi don - [ ile basla ] ile bit, baska hicbir sey yazma:
 Kullanabilecegin etiketler: 🟢 Pozitif | 🔴 Riskli | ⚪ Notr | 📊 Piyasa | 💰 Ekonomi | ⭐ Magazin | 📱 Sosyal Medya | 🔥 Fenomen
 Tam {count} farkli konuda haber sec."""
 
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    # Sürüm derdi olmayan DOGRUDAN GEMINI REST API Baglantisi
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt + "\n\nHABERLER:\n" + news_text[:60000]}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json" # Bu sihirli ayar sayesinde SADECE temiz JSON doner!
+        }
+    }
+
     try:
-        # Karakter sinirini 14000'e sabitledik (Groq Rate Limit/Token sinirina takilmamak icin)
-        res = requests.post("https://api.groq.com/openai/v1/chat/completions",
-            headers=headers, timeout=60, json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role":"system","content":prompt},
-                    {"role":"user","content":f"HABERLER:\n{news_text[:14000]}"}
-                ],
-                "temperature": 0.1, "max_tokens": 4000,
-            })
-            
+        res = requests.post(url, headers=headers, json=payload, timeout=60)
         res_json = res.json()
         
-        # API'den gelen cevapta bir hata mesaji varsa bunu ekrana yazdir
-        if "choices" not in res_json:
-            print(f"  API REDDETTI (Hata Detayi): {json.dumps(res_json, indent=2)}")
+        if "candidates" not in res_json:
+            print(f"  GEMINI API REDDETTI: {json.dumps(res_json, indent=2)}")
             return []
 
-        raw = res_json["choices"][0]["message"]["content"]
+        # Gemini'nin tertemiz JSON yanitini aliyoruz
+        raw = res_json["candidates"][0]["content"]["parts"][0]["text"]
+        result = json.loads(raw)
         
-        # Guvenli string temizleme (Regex hatasi alinmamasi icin)
-        clean = raw.replace("```json", "").replace("```", "").strip()
-        
-        match = re.search(r'\[[\s\S]*\]', clean)
-        if match:
-            result = json.loads(match.group(0))
-            for item in result:
-                item["url"]   = re.sub(r'URL=\s*|\|', '', item.get("url","")).strip()
-                item["image"] = re.sub(r'IMG=\s*|\|', '', item.get("image","")).strip()
-                item["titleHash"] = re.sub(r'HASH=\s*', '', item.get("titleHash","")).strip()
-            print(f"  AI {len(result)} haber secti")
-            return result
-        print("  JSON bulunamadi:", clean[:200])
-        return []
+        for item in result:
+            item["url"]   = re.sub(r'URL=\s*|\|', '', str(item.get("url",""))).strip()
+            item["image"] = re.sub(r'IMG=\s*|\|', '', str(item.get("image",""))).strip()
+            item["titleHash"] = re.sub(r'HASH=\s*', '', str(item.get("titleHash",""))).strip()
+            
+        print(f"  AI {len(result)} haber secti")
+        return result
     except Exception as e:
         print(f"  AI hatasi: {e}")
         return []
@@ -292,7 +288,7 @@ def enrich_with_images(ai_list, news_items_map):
     return enriched
 
 def save_to_firestore(token, data):
-    url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements"
+    url = f"[https://firestore.googleapis.com/v1/projects/](https://firestore.googleapis.com/v1/projects/){FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements"
     now_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     doc = {"fields": {
         "baslik":    {"stringValue": str(data.get("baslik",""))[:100]},
@@ -315,7 +311,7 @@ def save_to_firestore(token, data):
 
 def main():
     print("=" * 50)
-    print(f" Kapsamli Haber Botu | {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f" Kapsamli Haber Botu (Gemini) | {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 50)
 
     print("\n[1] Firebase giris...")
