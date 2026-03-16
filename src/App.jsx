@@ -115,7 +115,7 @@ const INIT = {
 const gs = () => ({
   app:      { display:'flex', flexDirection:'column', height:'100dvh', background:C.bg, maxWidth:480, margin:'0 auto', position:'relative', overflow:'hidden' },
   header:   { padding:'16px 20px 12px', background:C.card, flexShrink:0 },
-  scrollArea:{ flex:1, overflowY:'auto', padding:16, paddingBottom:24, background:C.bg },
+  scrollArea:{ flex:1, overflowY:'auto', padding:16, paddingBottom:24, background:C.bg, height:'100%', width:'100%', minHeight:0 },
   card:     { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 },
   half:     { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 },
   grid2:    { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 },
@@ -3043,6 +3043,44 @@ function CryptoScreen({ data, setData }) {
     </div>
   );
 }
+// ─── EKSİK OLAN VE UYGULAMAYI ÇÖKERTEN YARDIMCI BİLEŞENLER (Eklendi) ───
+
+function CommentsSummary({ newsId, onOpenFull }) {
+  return (
+    <div 
+      onClick={onOpenFull}
+      style={{padding:'10px', background:'rgba(255,255,255,0.05)', borderRadius:'12px', marginTop:'10px', textAlign:'center', cursor:'pointer'}} 
+    >
+      <span style={{fontSize:12, color:C.muted, fontWeight:700}}>💬 Yorumları Gör...</span>
+    </div>
+  );
+}
+
+function CommentsModal({ newsId, newsTitle, user, onClose }) {
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:999, display:'flex', justifyContent:'center', alignItems:'center', padding:20}}>
+      <div style={{background:C.card, border:`1px solid ${C.border}`, padding:24, borderRadius:20, width:'100%', maxWidth:400}}>
+        <h3 style={{color:C.text, marginTop:0, fontSize:16}}>{newsTitle}</h3>
+        <p style={{color:C.muted, fontSize:13, marginBottom:20}}>Yorum sistemi yakında eklenecek...</p>
+        <button onClick={onClose} style={{...s.btn, background:C.accent, width:'100%'}}>Kapat</button>
+      </div>
+    </div>
+  );
+}
+
+function StockDetailModal({ stock, isFav, onToggleFav, onClose }) {
+  return (
+    <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:999, display:'flex', justifyContent:'center', alignItems:'center', padding:20}}>
+      <div style={{background:C.card, border:`1px solid ${C.border}`, padding:24, borderRadius:20, width:'100%', maxWidth:400}}>
+        <h3 style={{color:C.text, marginTop:0, fontSize:18}}>{stock.name} ({stock.code})</h3>
+        <p style={{color:C.muted, fontSize:13, marginBottom:20}}>Detaylı grafik sayfası yapım aşamasında...</p>
+        <button onClick={onClose} style={{...s.btn, background:C.blue, width:'100%'}}>Kapat</button>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
 
 // ─── ANA UYGULAMA ──────────────────────────────────────────────────────────
 export default function App() {
