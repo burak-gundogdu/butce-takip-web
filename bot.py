@@ -1,4 +1,4 @@
-import os, requests, json, time, re, hashlib
+import os, requests, json, time, re, hashlib, random
 from datetime import datetime, timezone
 
 FIREBASE_API_KEY    = os.environ.get("FIREBASE_API_KEY")
@@ -122,7 +122,8 @@ def fetch_all_news():
         ("Haberturk Magazin","https://www.haberturk.com/rss/kategori/magazin.xml",      0),
         ("Milliyet Magazin", "https://www.milliyet.com.tr/rss/rssNew/magazinRss.xml",   1),
         ("NTV Yasam",        "https://www.ntv.com.tr/yasam.rss",                        2),
-        ("Onedio",           "https://onedio.com/support/rss.xml",                      3),
+        ("Onedio",           "https://onedio.com/rss",                                  3),
+        ("Ensonhaber Mag",   "https://www.ensonhaber.com/rss/magazin.xml",              0),
     ]
 
     for name, url, ua_idx in sources:
@@ -192,19 +193,23 @@ def analyze_with_ai(news_items):
     if not news_items:
         return []
 
+    # AI'in magazin haberlerini es gecmemesi icin listeyi rastgele karistiriyoruz
+    items_copy = list(news_items)
+    random.shuffle(items_copy)
+
     lines = []
-    for i in news_items:
+    for i in items_copy:
         desc = f" | {i['description'][:80]}" if i.get('description') else ""
         lines.append(f"[{i['source']}] {i['title']}{desc} |URL={i.get('url','')}| |IMG={i.get('image','')}| HASH={i['hash']}")
     news_text = "\n".join(lines)
 
-    count = min(15, len(news_items))
+    count = min(15, len(items_copy))
     prompt = f"""Sen uzman bir haber editorusun.
-Asagidaki {len(news_items)} haberden EN ONEMLI ve DIKKAT CEKICI {count} tanesini sec.
+Asagidaki {len(items_copy)} haberden EN ONEMLI ve DIKKAT CEKICI {count} tanesini sec.
 Secimlerinde MUTLAKA su 3 ana kategoriden karma yapmalisin:
 1. Turkiye Ekonomisi ve Borsa
 2. Global Ekonomi ve Kuresel Haberler
-3. Magazin, Sosyal Medya, Youtuber, Influencer ve Populer Kultur
+3. Magazin, Sosyal Medya, Youtuber, Influencer ve Populer Kultur (DIKKAT: EN AZ 5 TANE MAGAZIN/SOSYAL MEDYA HABERI SECMEK ZORUNDASIN)
 
 SADECE JSON dizisi don - [ ile basla ] ile bit, baska hicbir sey yazma:
 
@@ -230,7 +235,8 @@ Tam {count} farkli konuda haber sec."""
                 "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {"role":"system","content":prompt},
-                    {"role":"user","content":f"HABERLER:\n{news_text[:9000]}"}
+                    # Karakter sinirini 20000'e cikardik ki tum haberler sigsin
+                    {"role":"user","content":f"HABERLER:\n{news_text[:20000]}"}
                 ],
                 "temperature": 0.1, "max_tokens": 6000,
             }).json()
