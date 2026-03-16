@@ -244,7 +244,7 @@ Tam {count} farkli konuda haber sec."""
             }).json()
 
         raw = res["choices"][0]["message"]["content"]
-        clean = re.sub(r'
+clean = re.sub(r'`{3}[a-z]*\n?|`{3}|\*\*(.+?)\*\*', lambda m: m.group(1) or '', raw).strip()
 http://googleusercontent.com/immersive_entry_chip/0
 
 ### Neler Değişti?
