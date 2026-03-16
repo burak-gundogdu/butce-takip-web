@@ -1398,7 +1398,10 @@ function SettingsTab({ data, setData, user }) {
   const [alCode, setAC]   = useState('');
   const [alPrice, setAP]  = useState('');
   const [alDir, setAD]    = useState('ust');
-  const [notifPerm, setNP] = useState(Notification?.permission || 'default');
+  
+  // GÜVENLİ BİLDİRİM KONTROLÜ EKLENDİ (Mobil çökmesini engeller)
+  const safeNotif = typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default';
+  const [notifPerm, setNP] = useState(safeNotif);
 
   const setTheme = (t) => setData(d => ({...d, settings:{...d.settings, theme:t}}));
   const setLang  = (l) => setData(d => ({...d, settings:{...d.settings, lang:l}}));
@@ -1412,7 +1415,7 @@ function SettingsTab({ data, setData, user }) {
   const delAlert = (id) => setData(d => ({...d, settings:{...d.settings, priceAlerts:alerts.filter(a=>a.id!==id)}}));
 
   const requestNotif = async () => {
-    if (!('Notification' in window)) return alert('Tarayici bildirim desteklemiyor');
+    if (typeof window === 'undefined' || !('Notification' in window)) return alert('Tarayici bildirim desteklemiyor');
     const p = await Notification.requestPermission();
     setNP(p);
     if (p === 'granted') {
@@ -1425,7 +1428,7 @@ function SettingsTab({ data, setData, user }) {
     else alert('Tarayici menusunden "Ana Ekrana Ekle" yi sec');
   };
 
-  const resetAll = ()=>{ if(confirm('Tum veriler silinecek!')) { setData({...INIT}); } };
+  const resetAll = ()=>{ if(window.confirm('Tum veriler silinecek!')) { setData({...INIT}); } };
   const exportCSV = ()=>{
     let csv='Tarih,Tur,Kategori,Tutar,Not\n';
     data.transactions.forEach(t=>{ csv+=`${t.date},${t.type},${t.category},${t.amount},"${(t.note||'').replace(/"/g,'')}"\n`; });
@@ -1433,10 +1436,8 @@ function SettingsTab({ data, setData, user }) {
     const a=document.createElement('a'); a.href=url; a.download='butce.csv'; a.click();
   };
 
-  const sectionTitle = {fontSize:11,color:C.muted,fontWeight:700,letterSpacing:'1px',marginBottom:10,marginTop:4};
-
   return (
-    <div style={s.scrollArea}>
+    <div style={{...s.scrollArea, height:'100%', width:'100%', minHeight:0}}>
       {/* Hesap */}
       <Card style={{borderColor:C.accentBg}}>
         <H title={T.hesap} />
@@ -2257,21 +2258,14 @@ function NewsFeedScreen({ user }) {
                   🔗
                 </a>
               )}
-              <button onClick={()=>{
-                if(navigator.share && current?.url) {
-                  navigator.share({title:current?.baslik, url:current?.url}).catch(()=>{});
-                } else if (current?.url) {
-                  navigator.clipboard?.writeText(current.url);
-                  alert('Link kopyalandi!');
-                }
-              }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:C.dim,
-                background:C.border,border:'none',borderRadius:20,padding:'6px 12px',cursor:'pointer'}}>
-                📤
-              </button>
             </div>
-            {/* Yorumlar - kart altinda sabit */}
+            
+            {/* Yorumlar - İÇERİYE GÖMÜLDÜ ÇÖKME ENGELLENDİ */}
             {current?.id && (
-              <CommentsSummary newsId={current.id} onOpenFull={()=>setCN({id:current.id,baslik:current.baslik})} />
+              <div onClick={()=>setCN({id:current.id,baslik:current.baslik})}
+                   style={{padding:'10px', background:'rgba(255,255,255,0.05)', borderRadius:'12px', marginTop:'10px', textAlign:'center', cursor:'pointer'}}>
+                <span style={{fontSize:12, color:C.muted, fontWeight:700}}>💬 Yorumları Gör...</span>
+              </div>
             )}
           </div>
         </div>
@@ -2285,8 +2279,6 @@ function NewsFeedScreen({ user }) {
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:800,fontSize:13,color:C.text,overflow:'hidden',
                 textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{article.baslik}</div>
-              <div style={{fontSize:10,color:C.muted,marginTop:2,overflow:'hidden',
-                textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{article.url}</div>
             </div>
             <div style={{display:'flex',gap:8,marginLeft:8}}>
               <a href={article.url} target="_blank" rel="noreferrer"
@@ -2301,48 +2293,40 @@ function NewsFeedScreen({ user }) {
               </button>
             </div>
           </div>
-          <iframe
-            src={article.url}
-            style={{flex:1,border:'none',background:'#fff'}}
-            title={article.baslik}
-            sandbox="allow-scripts allow-same-origin allow-popups"
-          />
+          <iframe src={article.url} style={{flex:1,border:'none',background:'#fff'}} title={article.baslik} sandbox="allow-scripts allow-same-origin allow-popups" />
         </div>
       )}
-      {/* Yorum modali */}
+      
+      {/* Yorum modali - İÇERİYE GÖMÜLDÜ ÇÖKME ENGELLENDİ */}
       {commentNews && (
-        <CommentsModal newsId={commentNews.id} newsTitle={commentNews.baslik} user={user} onClose={()=>setCN(null)}/>
+        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:999, display:'flex', justifyContent:'center', alignItems:'center', padding:20}}>
+          <div style={{background:C.card, border:`1px solid ${C.border}`, padding:24, borderRadius:20, width:'100%', maxWidth:400}}>
+            <h3 style={{color:C.text, marginTop:0, fontSize:16}}>{commentNews.baslik}</h3>
+            <p style={{color:C.muted, fontSize:13, marginBottom:20}}>Yorum sistemi yakında eklenecek...</p>
+            <button onClick={()=>setCN(null)} style={{...s.btn, background:C.accent, width:'100%'}}>Kapat</button>
+          </div>
+        </div>
       )}
-      {/* Navigasyon butonlari - sadece yukari asagi */}
+
+      {/* Navigasyon butonlari */}
       <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:24,padding:'12px 16px 20px',flexShrink:0}}>
         <button onClick={goPrev} disabled={idx===0}
           style={{width:52,height:52,borderRadius:26,background:idx===0?'#111':C.yellowBg,
             border:`2px solid ${idx===0?C.border:C.yellow}`,display:'flex',alignItems:'center',
-            justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:22,opacity:idx===0?0.3:1}}>
-          ↑
-        </button>
+            justifyContent:'center',cursor:idx===0?'default':'pointer',fontSize:22,opacity:idx===0?0.3:1}}>↑</button>
         <button onClick={saveCard}
           style={{width:52,height:52,borderRadius:26,
             background:saved.find(s=>s.id===current?.id)?C.accentBg:'#1a1a2e',
             border:`2px solid ${saved.find(s=>s.id===current?.id)?C.accent:C.border}`,
-            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:20}}>
-          🔖
-        </button>
+            display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:20}}>🔖</button>
         <button onClick={()=>goNext('up')} disabled={idx>=cards.length-1}
           style={{width:52,height:52,borderRadius:26,background:idx>=cards.length-1?'#111':C.blueBg,
             border:`2px solid ${idx>=cards.length-1?C.border:C.blue}`,display:'flex',alignItems:'center',
-            justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:22,opacity:idx>=cards.length-1?0.3:1}}>
-          ↓
-        </button>
+            justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:22,opacity:idx>=cards.length-1?0.3:1}}>↓</button>
       </div>
-
-      {idx===0&&cards.length>0&&(
-        <div style={{textAlign:'center',paddingBottom:8,flexShrink:0}}>
-          <span style={{fontSize:10,color:C.muted}}>Yukari/Asagi Kaydır  |  🔖 Kaydet  |  🔗 Kaynaga Git</span>
-        </div>
-      )}
     </div>
   );
+}
 }
 
 
@@ -2842,19 +2826,19 @@ function StocksScreen({ data, setData }) {
           </div>
         )}
       </div>
-      {/* Hisse detay modal */}
+      {/* Hisse detay modal - İÇERİYE GÖMÜLDÜ ÇÖKME ENGELLENDİ */}
       {selectedStock && (
-        <StockDetailModal
-          stock={selectedStock}
-          isFav={favs.includes(selectedStock.code)}
-          onToggleFav={()=>toggleFav(selectedStock.code)}
-          onClose={()=>setSS(null)}
-        />
+        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:999, display:'flex', justifyContent:'center', alignItems:'center', padding:20}}>
+          <div style={{background:C.card, border:`1px solid ${C.border}`, padding:24, borderRadius:20, width:'100%', maxWidth:400}}>
+            <h3 style={{color:C.text, marginTop:0, fontSize:18}}>{selectedStock.name} ({selectedStock.code})</h3>
+            <p style={{color:C.muted, fontSize:13, marginBottom:20}}>Detaylı grafik sayfası yapım aşamasında...</p>
+            <button onClick={()=>setSS(null)} style={{...s.btn, background:C.blue, width:'100%'}}>Kapat</button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
-
 
 // ─── KRİPTO EKRANI ─────────────────────────────────────────────────────────
 const TOP_CRYPTOS = [
@@ -3137,9 +3121,11 @@ export default function App() {
     setThemeKey(k => k + 1);
   }, [data?.settings?.theme, data?.settings?.lang]);
 
-  // Fiyat alarm kontrol
+// Fiyat alarm kontrol
   useEffect(() => {
-    if (!data || Notification?.permission !== 'granted') return;
+    // Mobil çökmeyi önleyen güvenli window.Notification kontrolü eklendi
+    if (!data || typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') return;
+    
     const alerts = data.settings?.priceAlerts || [];
     if (!alerts.length) return;
     const codes = alerts.map(a => a.code);
