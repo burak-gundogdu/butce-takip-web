@@ -26,16 +26,13 @@ def title_hash(title):
     return hashlib.md5(clean.encode('utf-8')).hexdigest()[:14]
 
 def normalize_title(title):
-    """Benzerligi karsilastirmak icin basligi normalize et"""
     t = title.lower().strip()
     t = re.sub(r'[^\w\s]', ' ', t)
     t = re.sub(r'\s+', ' ', t).strip()
-    # Cok kisa kelimeleri kaldir
     words = [w for w in t.split() if len(w) > 3]
     return set(words)
 
 def is_similar(title1, title2, threshold=0.5):
-    """Iki baslik yeterince benzer mi? Kelime overlap kontrolu"""
     w1 = normalize_title(title1)
     w2 = normalize_title(title2)
     if not w1 or not w2:
@@ -52,12 +49,10 @@ def get_firebase_token():
     return res["idToken"]
 
 def fetch_og_image(url, timeout=5):
-    """Haberin og:image'ini cek"""
     if not url:
         return ""
     try:
         res = requests.get(url, headers={"User-Agent": UA_LIST[0]}, timeout=timeout)
-        # og:image bul
         match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', res.text)
         if not match:
             match = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', res.text)
@@ -90,7 +85,6 @@ def parse_rss_regex(xml_text, source_name, limit=10):
         url = link_m.group(1).strip() if link_m else ""
         desc_m = re.search(r'<description[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>', block, re.DOTALL)
         desc = re.sub(r'<[^>]+>', '', desc_m.group(1)).strip()[:200] if desc_m else ""
-        # Resim: once enclosure, sonra media:content
         img_m = (
             re.search(r'<enclosure[^>]+url=["\']([^"\']+\.(?:jpg|jpeg|png|webp))["\']', block, re.I) or
             re.search(r'<media:content[^>]+url=["\']([^"\']+)["\']', block)
@@ -113,35 +107,37 @@ def fetch_rss_direct(name, url, ua_index=0, limit=10):
 def fetch_all_news():
     all_items = []
     seen_hashes = set()
-    seen_titles = []  # Benzerlik kontrolu icin
+    seen_titles = [] 
 
+    # --- KAYNAKLAR GÜNCELLENDİ (Ekonomi + Magazin + Influencer + Global) ---
     sources = [
-        ("NTV Ekonomi",      "https://www.ntv.com.tr/ekonomi.rss",                       0),
-        ("TRT Ekonomi",      "https://www.trthaber.com/ekonomi_articles.rss",             1),
-        ("Sabah Ekonomi",    "https://www.sabah.com.tr/rss/ekonomi.xml",                  2),
-        ("Haberturk",        "https://www.haberturk.com/rss/kategori/ekonomi.xml",        3),
-        ("Hurriyet Ekonomi", "https://www.hurriyet.com.tr/rss/ekonomi",                   0),
-        ("Milliyet Ekonomi", "https://www.milliyet.com.tr/rss/rssNew/ekonomiRss.xml",     1),
-        ("Dunya Gazetesi",   "https://www.dunya.com/rss/ekonomi.xml",                     2),
-        ("Bloomberg HT",     "https://www.bloomberght.com/rss",                           3),
-        ("Para Analiz",      "https://www.paraanaliz.com/feed/",                          0),
-        ("Borsagundem",      "https://www.borsagundem.com/rss",                           1),
-        ("Sozcu Ekonomi",    "https://www.sozcu.com.tr/rss/ekonomi.xml",                  2),
-        ("Takvim Ekonomi",   "https://www.takvim.com.tr/rss/ekonomi.xml",                 3),
-        ("Ensonhaber",       "https://www.ensonhaber.com/rss/ekonomi.xml",                0),
-        ("A Haber Ekonomi",  "https://www.ahaber.com.tr/rss/ekonomi.xml",                 1),
-        ("Isyatirim",        "https://www.isyatirim.com.tr/haber/rss",                    2),
-        ("Bigpara",          "https://bigpara.hurriyet.com.tr/rss/",                      3),
+        # Ekonomi & Borsa
+        ("NTV Ekonomi",      "https://www.ntv.com.tr/ekonomi.rss",                      0),
+        ("Bloomberg HT",     "https://www.bloomberght.com/rss",                         1),
+        ("Haberturk Eko",    "https://www.haberturk.com/rss/kategori/ekonomi.xml",      2),
+        ("Hurriyet Eko",     "https://www.hurriyet.com.tr/rss/ekonomi",                 3),
+        
+        # Global Haberler
+        ("BBC Turkce",       "https://feeds.bbci.co.uk/turkce/rss.xml",                 0),
+        
+        # Teknoloji & Influencer & Youtuber Haberleri
+        ("Webtekno",         "https://www.webtekno.com/rss.xml",                        1),
+        ("ShiftDelete",      "https://shiftdelete.net/feed",                            2),
+        
+        # Magazin & Popüler Kültür
+        ("Hurriyet Magazin", "https://www.hurriyet.com.tr/rss/magazin",                 3),
+        ("Haberturk Magazin","https://www.haberturk.com/rss/kategori/magazin.xml",      0),
+        ("Milliyet Magazin", "https://www.milliyet.com.tr/rss/rssNew/magazinRss.xml",   1),
+        ("NTV Yasam",        "https://www.ntv.com.tr/yasam.rss",                        2),
+        ("Onedio",           "https://onedio.com/support/rss.xml",                      3),
     ]
 
     for name, url, ua_idx in sources:
-        items = fetch_rss_direct(name, url, ua_idx, limit=8)
+        items = fetch_rss_direct(name, url, ua_idx, limit=10) # Limit biraz artırıldı
         added = 0
         for item in items:
-            # Hash duplikat kontrolu
             if item["hash"] in seen_hashes:
                 continue
-            # Semantik benzerlik kontrolu — ayni haberin farkli kaynaktan gelmesini engelle
             too_similar = False
             for seen_title in seen_titles:
                 if is_similar(item["title"], seen_title, threshold=0.5):
@@ -160,7 +156,6 @@ def fetch_all_news():
     return all_items
 
 def get_existing_data(token):
-    """Mevcut hash ve baslikları cek"""
     url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements?pageSize=150"
     try:
         res = requests.get(url, headers={"Authorization":f"Bearer {token}"}, timeout=10).json()
@@ -210,16 +205,30 @@ def analyze_with_ai(news_items):
         lines.append(f"[{i['source']}] {i['title']}{desc} |URL={i.get('url','')}| |IMG={i.get('image','')}| HASH={i['hash']}")
     news_text = "\n".join(lines)
 
-    count = min(12, len(news_items))
-    prompt = f"""Sen uzman bir Turk finans analistisin.
-Asagidaki {len(news_items)} haberden EN ONEMLI ve FARKLI {count} tanesini sec.
-Benzer konudaki haberlerden sadece birini sec.
+    # --- YAPAY ZEKA PROMPTU GÜNCELLENDİ ---
+    count = min(15, len(news_items)) # 15 haber seçsin ki magazin ve globale yer kalsın
+    prompt = f"""Sen uzman bir haber editorusun.
+Asagidaki {len(news_items)} haberden EN ONEMLI ve DIKKAT CEKICI {count} tanesini sec.
+Secimlerinde MUTLAKA su 3 ana kategoriden karma yapmalisin:
+1. Turkiye Ekonomisi ve Borsa
+2. Global Ekonomi ve Kuresel Haberler
+3. Magazin, Sosyal Medya, Youtuber, Influencer ve Populer Kultur
 
 SADECE JSON dizisi don - [ ile basla ] ile bit, baska hicbir sey yazma:
 
-[{{"baslik":"Max 65 karakter etkileyici baslik","icerik":"3 cumlelik detayli ozet.","analiz":"Yatirimci ve tuketici icin 2 cumlelik somut analiz.","etiket":"🟢 Pozitif","tip":"haber","kaynak":"kaynak ismi","url":"URL= den sonraki linki aynen kop","image":"IMG= den sonraki linki aynen kop","titleHash":"HASH= den sonraki degeri aynen kop"}}]
+[{{
+  "baslik": "Max 65 karakter etkileyici baslik",
+  "icerik": "3 cumlelik detayli ozet. Magazin/sosyal medya haberiyse kimin ne yaptigini net yaz.",
+  "analiz": "Okuyucu icin 2 cumlelik somut cikarim. (Orn: Bu olay su anlama geliyor...)",
+  "etiket": "⭐ Magazin",
+  "tip": "haber",
+  "kaynak": "kaynak ismi",
+  "url": "URL= den sonraki linki aynen kop",
+  "image": "IMG= den sonraki linki aynen kop",
+  "titleHash": "HASH= den sonraki degeri aynen kop"
+}}]
 
-etiket: 🟢 Pozitif | 🔴 Riskli | ⚪ Notr | 📊 Piyasa | 💰 Ekonomi | 🏦 MB | 💵 Doviz | 📈 Yukselis | 📉 Dusus | 🏢 Sirket | 📋 KAP
+Kullanabilecegin etiketler: 🟢 Pozitif | 🔴 Riskli | ⚪ Notr | 📊 Piyasa | 💰 Ekonomi | ⭐ Magazin | 📱 Sosyal Medya | 🔥 Fenomen
 Tam {count} farkli konuda haber sec."""
 
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
@@ -235,129 +244,13 @@ Tam {count} farkli konuda haber sec."""
             }).json()
 
         raw = res["choices"][0]["message"]["content"]
-        clean = re.sub(r'```[a-z]*\n?|```|\*\*(.+?)\*\*', lambda m: m.group(1) or '', raw).strip()
-        match = re.search(r'\[[\s\S]*\]', clean)
-        if match:
-            result = json.loads(match.group(0))
-            # Temizle
-            for item in result:
-                item["url"]   = re.sub(r'URL=\s*|\|', '', item.get("url","")).strip()
-                item["image"] = re.sub(r'IMG=\s*|\|', '', item.get("image","")).strip()
-                item["titleHash"] = re.sub(r'HASH=\s*', '', item.get("titleHash","")).strip()
-            print(f"  AI {len(result)} haber secti")
-            return result
-        print("  JSON bulunamadi:", clean[:200])
-        return []
-    except Exception as e:
-        print(f"  AI hatasi: {e}")
-        return []
+        clean = re.sub(r'
+http://googleusercontent.com/immersive_entry_chip/0
 
-def enrich_with_images(ai_list, news_items_map):
-    """Her haber icin gorsel bul - RSS den veya og:image den"""
-    enriched = []
-    for item in ai_list:
-        img = item.get("image","").strip()
-        # Her durumda URL'den cekmeyi dene (RSS gorseli cok kucuk olabilir)
-        url = item.get("url","")
-        if url and (not img or not img.startswith('http') or len(img) < 20):
-            fetched = fetch_og_image(url, timeout=8)
-            if fetched:
-                img = fetched
-                print(f"  Resim: {item.get('baslik','')[:40]} → {img[:50]}")
-        item["image"] = img if img else ""
-        enriched.append(item)
-        time.sleep(0.15)
-    has_img = sum(1 for i in enriched if i.get("image"))
-    print(f"  {has_img}/{len(enriched)} haberde gorsel var")
-    return enriched
+### Neler Değişti?
+1. **Yeni RSS Kaynakları Eklendi:** Sadece ekonomiye saplanıp kalmaması için Webtekno, ShiftDelete (Fenomen/Teknoloji haberleri için harikadır), Onedio, Hürriyet Magazin ve Habertürk Magazin eklendi.
+2. **Global Kaynak Eklendi:** Global sekmen dolsun diye listeye "BBC Türkçe"yi de yerleştirdim.
+3. **Yapay Zeka Promptu Güncellendi:** Groq'a gönderilen talimatta yapay zekaya artık *"Mutlaka bu 3 kategoriden karma bir liste yap: 1. Türkiye Ekonomi, 2. Global, 3. Magazin/Youtuber/Sosyal Medya"* dedik.
+4. **Etiketler Güncellendi:** Uygulama içinde filtreleme yapan etiketlere **"⭐ Magazin", "📱 Sosyal Medya", "🔥 Fenomen"** kavramları eklendi. 
 
-def save_to_firestore(token, data):
-    url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements"
-    now_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    doc = {"fields": {
-        "baslik":    {"stringValue": str(data.get("baslik",""))[:100]},
-        "icerik":    {"stringValue": str(data.get("icerik",""))},
-        "analiz":    {"stringValue": str(data.get("analiz",""))},
-        "etiket":    {"stringValue": str(data.get("etiket","⚪ Notr"))},
-        "tip":       {"stringValue": "haber"},
-        "kaynak":    {"stringValue": str(data.get("kaynak",""))},
-        "url":       {"stringValue": str(data.get("url",""))},
-        "image":     {"stringValue": str(data.get("image",""))},
-        "titleHash": {"stringValue": str(data.get("titleHash",""))},
-        "createdAt": {"timestampValue": now_str},
-        "publishedAt":{"stringValue": now_str},
-    }}
-    try:
-        r = requests.post(url, headers={"Authorization":f"Bearer {token}"}, json=doc, timeout=10)
-        return r.status_code == 200
-    except:
-        return False
-
-def main():
-    print("=" * 50)
-    print(f" Finans Botu | {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}")
-    print("=" * 50)
-
-    print("\n[1] Firebase giris...")
-    token = get_firebase_token()
-    print("    OK")
-
-    print("\n[2] Eski haberler temizleniyor (24h+)...")
-    delete_old_news(token)
-
-    print("\n[3] Mevcut haberler aliniyor...")
-    existing_hashes, existing_titles = get_existing_data(token)
-    print(f"    Mevcut: {len(existing_hashes)} haber")
-
-    print("\n[4] RSS kaynaklarindan haberler cekiliyor...")
-    all_items = fetch_all_news()
-    if not all_items:
-        print("\nHATA: Hic haber cekemedik!"); return
-
-    print("\n[5] Yeni ve benzersiz haberler filtreleniyor...")
-    new_items = []
-    for item in all_items:
-        # Hash kontrolu
-        if item["hash"] in existing_hashes:
-            continue
-        # Firestore'daki haberlerle benzerlik kontrolu
-        too_similar = any(is_similar(item["title"], et, threshold=0.45) for et in existing_titles)
-        if too_similar:
-            continue
-        new_items.append(item)
-
-    print(f"    {len(new_items)} gercekten yeni haber bulundu")
-
-    if not new_items:
-        print("    Yeni haber yok, cikiliyor.")
-        return
-
-    print("\n[6] AI analiz ve secim...")
-    ai_list = analyze_with_ai(new_items)
-    if not ai_list:
-        print("HATA: AI bos dondu!"); return
-
-    print("\n[7] Resimler ekleniyor...")
-    ai_list = enrich_with_images(ai_list, {i["hash"]:i for i in new_items})
-
-    print("\n[8] Firestore'a kaydediliyor...")
-    saved = 0
-    for item in ai_list:
-        h = item.get("titleHash","")
-        if h in existing_hashes:
-            print(f"    ATLA: {item.get('baslik','')[:50]}")
-            continue
-        if save_to_firestore(token, item):
-            has_img = "🖼️" if item.get("image") else "  "
-            print(f"    OK {has_img}: {item.get('baslik','')[:60]}")
-            existing_hashes.add(h)
-            existing_titles.append(item.get("baslik",""))
-            saved += 1
-        time.sleep(0.2)
-
-    print(f"\n{'='*50}")
-    print(f" TAMAMLANDI! {saved} yeni haber yayinlandi.")
-    print(f"{'='*50}")
-
-if __name__ == "__main__":
-    main()
+Botunu tekrar çalıştırdığında (önceki koddan kalan eski ekonomi haberleriyle karışık olarak) yeni Magazin ve Global haberlerin sisteme düştüğünü göreceksin! Deneyip sonucu söylersen süper olur.
