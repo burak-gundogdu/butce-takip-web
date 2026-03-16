@@ -2327,7 +2327,7 @@ function NewsFeedScreen({ user }) {
     </div>
   );
 }
-}
+
 
 
 // ─── BIST HİSSE EKRANI ─────────────────────────────────────────────────────
