@@ -1927,7 +1927,7 @@ function NewsFeedScreen({ user }) {
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
 
-  // SADECE haber tipindekiler
+// SADECE haber tipindekiler
   useEffect(()=>{
     const q = query(collection(db,'announcements'), orderBy('createdAt','desc'), limit(300));
     const unsub = onSnapshot(q, snap=>{
@@ -1938,6 +1938,19 @@ function NewsFeedScreen({ user }) {
     });
     return unsub;
   },[]);
+
+  // ---- DÜZELTİLEN KISIM: activeCards değişkenleri YUKARI taşındı ----
+  const GLOBAL_SOURCES = ['Reuters','Bloomberg','BBC','Financial Times','CNBC','WSJ'];
+  const globalCards = allCards.filter(c =>
+    GLOBAL_SOURCES.some(s => (c.kaynak||'').includes(s)) ||
+    /global|dünya|uluslararası|fed|ecb|world bank|imf/i.test(c.baslik+c.icerik)
+  );
+  const magazinCards = allCards.filter(c =>
+    /magazin|ünlü|celebrity|moda|fashion|sosyal medya|instagram|twitter/i.test(c.baslik+c.icerik)
+  );
+  const activeCards = newsTab === 'global' ? globalCards
+    : newsTab === 'magazin' ? magazinCards
+    : cards; // 'tr' - mevcut Türkçe haberler
 
   // Kategori filtresi
   const NEWS_CATS = [
@@ -1963,21 +1976,21 @@ function NewsFeedScreen({ user }) {
     uyari:  {color:C.yellow, bg:'#100e00', icon:'⚠️'},
   };
 
+  // ---- DÜZELTİLEN KISIM: Tanımsız setDrag çağrıları silindi ----
   const goNext=(dir='up')=>{
     if(idx>=filteredCards.length-1) return;
     setSwipe(dir);
-    setTimeout(()=>{ setIdx(i=>i+1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },260);
+    setTimeout(()=>{ setIdx(i=>i+1); setSwipe(null); dragRef.current={x:0,y:0}; },260);
   };
   const goPrev=()=>{
     if(idx===0) return;
     setSwipe('down');
-    setTimeout(()=>{ setIdx(i=>i-1); setSwipe(null); setDrag({x:0,y:0,dragging:false}); dragRef.current={x:0,y:0}; },260);
+    setTimeout(()=>{ setIdx(i=>i-1); setSwipe(null); dragRef.current={x:0,y:0}; },260);
   };
   const shuffle=()=>{ setCards([...allCards].sort(()=>Math.random()-0.5)); setIdx(0); setCatF('all'); };
   const saveCard=()=>{ if(current&&!saved.find(s=>s.id===current.id)) setSaved(s=>[...s,current]); };
 
   // Touch navigation - sadece kartın dışındaki alanlarda çalışır
-  // Kart içeriği serbestçe scroll edilebilir
   const onTouchStart=(e)=>{
     // Kart icindeyse scroll et, disindaysa navigation
     const cardEl = e.currentTarget.querySelector('[data-card="true"]');
@@ -2092,20 +2105,6 @@ function NewsFeedScreen({ user }) {
 
 
 
-  // Global ve Magazin haberler - allCards'dan filtrelenir
-  // veya ayrı Firestore collection'dan (announcements_global, announcements_magazin)
-  // Şimdilik kaynak bazlı filtre + keyword filtresi
-  const GLOBAL_SOURCES = ['Reuters','Bloomberg','BBC','Financial Times','CNBC','WSJ'];
-  const globalCards = allCards.filter(c =>
-    GLOBAL_SOURCES.some(s => (c.kaynak||'').includes(s)) ||
-    /global|dünya|uluslararası|fed|ecb|world bank|imf/i.test(c.baslik+c.icerik)
-  );
-  const magazinCards = allCards.filter(c =>
-    /magazin|ünlü|celebrity|moda|fashion|sosyal medya|instagram|twitter/i.test(c.baslik+c.icerik)
-  );
-  const activeCards = newsTab === 'global' ? globalCards
-    : newsTab === 'magazin' ? magazinCards
-    : cards; // 'tr' - mevcut Türkçe haberler
 
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:cfg.bg,transition:'background 0.5s'}}>
