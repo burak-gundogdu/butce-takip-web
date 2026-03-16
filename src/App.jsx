@@ -1923,6 +1923,7 @@ function NewsFeedScreen({ user }) {
   const [likes, setLikes]       = useState({});
   const [catFilter, setCatF]    = useState('all');
   const [article, setArticle]   = useState(null);
+  const [articleLoading, setArticleLoading] = useState(false);
   const [newsTab, setNewsTab]   = useState('tr'); // 'tr' | 'global' | 'magazin' 
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
@@ -2243,11 +2244,23 @@ function NewsFeedScreen({ user }) {
                   color:likes[current?.id]?C.red:C.muted}}>
                 {likes[current?.id]?'❤️':'🤍'}
               </button>
-              {current?.url&&(
-                <button onClick={()=>setArticle({url:current.url,baslik:current.baslik})}
+           {current?.url&&(
+                <button 
+                  onClick={async () => {
+                    setArticle({ baslik: current.baslik, url: current.url, text: '' });
+                    setArticleLoading(true);
+                    try {
+                      const res = await fetch(`/api/extract?url=${encodeURIComponent(current.url)}`);
+                      const data = await res.json();
+                      setArticle(prev => ({ ...prev, text: data.text }));
+                    } catch (e) {
+                      setArticle(prev => ({ ...prev, text: 'Haber metni çekilemedi.' }));
+                    }
+                    setArticleLoading(false);
+                  }}
                   style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:cfg.color,
                     background:`${cfg.color}15`,border:'none',borderRadius:20,padding:'6px 12px',cursor:'pointer',fontWeight:700}}>
-                  📖 Devamını Oku
+                  {articleLoading ? <Spinner size={12} color={cfg.color}/> : '📖 Devamını Oku'}
                 </button>
               )}
               {current?.url&&(
