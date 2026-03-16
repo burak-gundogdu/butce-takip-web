@@ -110,27 +110,31 @@ const INIT = {
   settings: { groqKey: '', theme: 'dark', lang: 'tr', favStocks: [], priceAlerts: [] },
 };
 
-// ─── STİLLER ───────────────────────────────────────────────────────────────
-const s = {
-  app: { display:'flex', flexDirection:'column', height:'100dvh', background:C.bg, maxWidth:480, margin:'0 auto', position:'relative', overflow:'hidden' },
-  header: { padding:'16px 20px 12px', background:C.headerBg||C.card, flexShrink:0 },
-  scrollArea: { flex:1, overflowY:'auto', padding:16, paddingBottom:24 },
-  card: { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 },
-  half: { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 },
-  grid2: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 },
-  btn: { background:C.accent, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:800, fontSize:14, color:'#0A0E1A', width:'100%', marginTop:10 },
-  btnSec: { background:C.border, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:700, fontSize:14, color:C.dim, width:'100%', marginTop:10 },
-  input: { background:'#1F2937', border:`1px solid ${C.border}`, borderRadius:10, padding:'12px', color:C.text, fontSize:14, width:'100%', marginBottom:0 },
-  label: { fontSize:10, color:C.muted, letterSpacing:'1.5px', marginBottom:4, display:'block' },
-  title: { fontSize:15, fontWeight:700, color:C.text },
-  tiny: { fontSize:11, color:C.muted, marginTop:2 },
-  body: { fontSize:13, fontWeight:600, color:C.text },
-  bigN: { fontSize:20, fontWeight:800, color:C.text },
-  nav: { display:'flex', background:C.card, borderTop:`1px solid ${C.border}`, flexShrink:0 },
-  navBtn: { flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'8px 4px 20px', cursor:'pointer', gap:2, border:'none', background:'transparent' },
-  chip: { display:'inline-block', padding:'7px 12px', borderRadius:8, cursor:'pointer', marginRight:6, marginBottom:4, fontWeight:600, fontSize:12, flexShrink:0 },
-  row: { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:`1px solid ${C.border}` },
-  txRow: { display:'flex', alignItems:'center', padding:'10px 0', borderBottom:`1px solid ${C.border}` },
+// ─── STİLLER - CSS var() kullanarak tema değişince otomatik güncellenir ──
+// Getter fonksiyonları ile dinamik stil - C değişince yeni değeri okur
+const gs = () => ({
+  app:      { display:'flex', flexDirection:'column', height:'100dvh', background:C.bg, maxWidth:480, margin:'0 auto', position:'relative', overflow:'hidden' },
+  header:   { padding:'16px 20px 12px', background:C.card, flexShrink:0 },
+  scrollArea:{ flex:1, overflowY:'auto', padding:16, paddingBottom:24, background:C.bg },
+  card:     { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 },
+  half:     { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 },
+  grid2:    { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 },
+  btn:      { background:C.accent, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:800, fontSize:14, color:'#0A0E1A', width:'100%', marginTop:10 },
+  btnSec:   { background:C.border, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:700, fontSize:14, color:C.dim, width:'100%', marginTop:10 },
+  input:    { background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:'12px', color:C.text, fontSize:14, width:'100%', marginBottom:0 },
+  label:    { fontSize:10, color:C.muted, letterSpacing:'1.5px', marginBottom:4, display:'block' },
+  title:    { fontSize:15, fontWeight:700, color:C.text },
+  tiny:     { fontSize:11, color:C.muted, marginTop:2 },
+  body:     { fontSize:13, fontWeight:600, color:C.text },
+  bigN:     { fontSize:20, fontWeight:800, color:C.text },
+  nav:      { display:'flex', background:C.card, borderTop:`1px solid ${C.border}`, flexShrink:0 },
+  navBtn:   { flex:1, display:'flex', flexDirection:'column', alignItems:'center', padding:'8px 4px 20px', cursor:'pointer', gap:2, border:'none', background:'transparent' },
+  chip:     { display:'inline-block', padding:'7px 12px', borderRadius:8, cursor:'pointer', marginRight:6, marginBottom:4, fontWeight:600, fontSize:12, flexShrink:0 },
+  row:      { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:`1px solid ${C.border}` },
+  txRow:    { display:'flex', alignItems:'center', padding:'10px 0', borderBottom:`1px solid ${C.border}` },
+});
+// s proxy - her erişimde güncel C değerlerini okur
+const s = new Proxy({}, { get: (_, k) => gs()[k] || {} });
   tag: { display:'inline-block', padding:'2px 6px', borderRadius:4, fontSize:10, fontWeight:700 },
 };
 
@@ -152,12 +156,62 @@ async function fetchRates() {
   if (!u) throw new Error('Kur alinamadi');
   return { usdTry: u, eurTry: e || u * 1.08 };
 }
+const CRYPTO_CG_IDS = {
+  BTC:'bitcoin', ETH:'ethereum', BNB:'binancecoin', SOL:'solana',
+  XRP:'ripple', ADA:'cardano', AVAX:'avalanche-2', DOGE:'dogecoin',
+  DOT:'polkadot', MATIC:'matic-network', LINK:'chainlink', UNI:'uniswap',
+  LTC:'litecoin', ATOM:'cosmos', XLM:'stellar', TRX:'tron', NEAR:'near',
+  ALGO:'algorand', VET:'vechain', FIL:'filecoin', SHIB:'shiba-inu',
+};
+
+async function getCryptoUSD(sym) {
+  // Önce Yahoo dene
+  try {
+    const ticker = sym.includes('-') ? sym : `${sym}-USD`;
+    const p = await yahooPrice(ticker);
+    if (p && p > 0) return p;
+  } catch {}
+  // CoinGecko fallback
+  const cgId = CRYPTO_CG_IDS[sym.toUpperCase()];
+  if (!cgId) throw new Error(`${sym} desteklenmiyor`);
+  const r = await fetch(`/api/prices`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ tickers: [`${sym.toUpperCase()}-USD`] }),
+  });
+  const d = await r.json();
+  const p = d.prices?.[`${sym.toUpperCase()}-USD`]?.price;
+  if (p && p > 0) return p;
+  throw new Error(`${sym} fiyat alinamadi`);
+}
+
 async function getPriceTL(type, symbol, usdTry) {
-  if (type === 'Hisse') { const p = await yahooPrice(symbol.includes('.') ? symbol : `${symbol}.IS`); if (!p) throw new Error(`${symbol} bulunamadi`); return p; }
-  if (type === 'Kripto') { const p = await yahooPrice(symbol.includes('-') ? symbol : `${symbol}-USD`); if (!p) throw new Error('Kripto bulunamadi'); return p * usdTry; }
-  if (type === 'Altin') { const p = await yahooPrice('GC=F'); if (!p) throw new Error('Altin bulunamadi'); return (p/TROY)*usdTry; }
-  if (type === 'Gumus') { const p = await yahooPrice('SI=F'); if (!p) throw new Error('Gumus bulunamadi'); return (p/TROY)*usdTry; }
-  if (type === 'Doviz') { const p = await yahooPrice(`${symbol.toUpperCase()}TRY=X`); if (!p) throw new Error('Kur bulunamadi'); return p; }
+  if (type === 'Hisse') {
+    const ticker = symbol.includes('.') ? symbol : `${symbol}.IS`;
+    const p = await yahooPrice(ticker);
+    if (!p) throw new Error(`${symbol} bulunamadi`);
+    return p;
+  }
+  if (type === 'Kripto') {
+    const rate = usdTry || 34;
+    const usdPrice = await getCryptoUSD(symbol);
+    return usdPrice * rate;
+  }
+  if (type === 'Altin') {
+    const p = await yahooPrice('GC=F');
+    if (!p) throw new Error('Altin bulunamadi');
+    return (p / TROY) * (usdTry || 34);
+  }
+  if (type === 'Gumus') {
+    const p = await yahooPrice('SI=F');
+    if (!p) throw new Error('Gumus bulunamadi');
+    return (p / TROY) * (usdTry || 34);
+  }
+  if (type === 'Doviz') {
+    const p = await yahooPrice(`${symbol.toUpperCase()}TRY=X`);
+    if (!p) throw new Error('Kur bulunamadi');
+    return p;
+  }
   return null;
 }
 
@@ -804,30 +858,53 @@ function InvestmentScreen({ data, setData }) {
   const add = () => {
     if(!alis) return;
     const name = itype==='Altin'?'Altin (gram)':itype==='Gumus'?'Gumus (gram)':(symbol.toUpperCase()||itype);
-    const a=parseFloat(alis); const c=parseFloat(cur)||a; const ad=parseFloat(adet)||1;
-    const sym = symbol.toUpperCase();
-    // Birleştirme anahtarı: Altın/Gümüş için sadece type, diğerleri için type+symbol
-    const mergeKey = (itype==='Altin'||itype==='Gumus') ? itype : (sym || null);
+    const a = parseFloat(alis);
+    const c = parseFloat(cur) || a;
+    const ad = parseFloat(adet) || 1;
+    const sym = symbol.toUpperCase().trim();
+
     setData(d => {
-      const existing = mergeKey
-        ? d.investments.find(i =>
-            i.type === itype &&
-            ((itype==='Altin'||itype==='Gumus') ? true : i.symbol === sym)
-          )
-        : null;
+      const invs = d.investments || [];
+      // Aynı tipte ve sembolde varlık var mı? (case-insensitive)
+      const existing = invs.find(i => {
+        if (i.type !== itype) return false;
+        if (itype === 'Altin' || itype === 'Gumus') return true; // Altın/Gümüş hep birleştir
+        if (!sym) return false;
+        return (i.symbol || '').toUpperCase().trim() === sym;
+      });
+
       if (existing) {
-        const totalAdet = (existing.adet||1) + ad;
-        const avgCost = ((existing.amount*(existing.adet||1)) + (a*ad)) / totalAdet;
-        const chg = parseFloat((((c-avgCost)/avgCost)*100).toFixed(2));
-        return {...d, investments: d.investments.map(i =>
-          i.id === existing.id
-            ? {...i, adet:totalAdet, amount:avgCost, current:c, change:chg}
-            : i
-        )};
+        const oldAdet = existing.adet || 1;
+        const newAdet = oldAdet + ad;
+        const avgCost = ((existing.amount * oldAdet) + (a * ad)) / newAdet;
+        const chg = parseFloat((((c - avgCost) / avgCost) * 100).toFixed(2));
+        return {
+          ...d,
+          investments: invs.map(i =>
+            i.id === existing.id
+              ? { ...i, adet: newAdet, amount: avgCost, current: c, change: chg }
+              : i
+          ),
+        };
       }
-      return {...d, investments:[...d.investments,{id:Date.now(),type:itype,name,symbol:sym,adet:ad,amount:a,current:c,change:parseFloat((((c-a)/a)*100).toFixed(2))}]};
+
+      // Yeni ekle
+      return {
+        ...d,
+        investments: [...invs, {
+          id: Date.now(),
+          type: itype,
+          name,
+          symbol: sym,
+          adet: ad,
+          amount: a,
+          current: c,
+          change: parseFloat((((c - a) / a) * 100).toFixed(2)),
+        }],
+      };
     });
-    setSym('');setAdet('');setAlis('');setCur('');
+
+    setSym(''); setAdet(''); setAlis(''); setCur('');
   };
   const del = id => setData(d=>({...d,investments:d.investments.filter(i=>i.id!==id)}));
 
@@ -1246,7 +1323,7 @@ function MoreScreen({ data, setData, user }) {
   const [tab, setTab] = useState('abonelik');
   const TABS = [{id:'abonelik',l:'Abonelik'},{id:'tekrar',l:'Tekrarlayan'},{id:'ayarlar',l:'Ayarlar'}];
   return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
       <div style={{display:'flex',background:C.card,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'12px 4px',border:'none',background:'transparent',cursor:'pointer',fontWeight:700,fontSize:13,color:tab===t.id?C.accent:C.muted,borderBottom:`2px solid ${tab===t.id?C.accent:'transparent'}`}}>
@@ -1254,9 +1331,12 @@ function MoreScreen({ data, setData, user }) {
           </button>
         ))}
       </div>
-      {tab==='abonelik' && <SubTab data={data} setData={setData} />}
-      {tab==='tekrar'   && <RecurTab data={data} setData={setData} />}
-      {tab==='ayarlar'  && <SettingsTab data={data} setData={setData} user={user} />}
+      {/* minHeight:0 + flex:1 mobilde içeriğin görünmesini sağlar */}
+      <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',minHeight:0}}>
+        {tab==='abonelik' && <SubTab data={data} setData={setData} />}
+        {tab==='tekrar'   && <RecurTab data={data} setData={setData} />}
+        {tab==='ayarlar'  && <SettingsTab data={data} setData={setData} user={user} />}
+      </div>
     </div>
   );
 }
@@ -1841,8 +1921,10 @@ function NewsFeedScreen({ user }) {
   const [showSaved, setShowS]   = useState(false);
   const [saved, setSaved]       = useState([]);
   const [commentNews, setCN]    = useState(null);
-  const [likes, setLikes]       = useState({}); // newsId -> bool
+  const [likes, setLikes]       = useState({});
   const [catFilter, setCatF]    = useState('all');
+  const [article, setArticle]   = useState(null);
+  const [newsTab, setNewsTab]   = useState('tr'); // 'tr' | 'global' | 'magazin' 
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
 
@@ -1872,7 +1954,7 @@ function NewsFeedScreen({ user }) {
     {id:'riskli',label:'🔴 Riskli', match: c => (c.etiket||'').includes('Riskli') || (c.etiket||'').includes('Dusus')},
   ];
   const activeCatObj = NEWS_CATS.find(n => n.id === catFilter) || NEWS_CATS[0];
-  const filteredCards = catFilter === 'all' ? cards : cards.filter(activeCatObj.match);
+  const filteredCards = catFilter === 'all' ? activeCards : activeCards.filter(activeCatObj.match);
   const current = filteredCards[idx];
   const progress = filteredCards.length ? (idx/filteredCards.length)*100 : 0;
 
@@ -2011,10 +2093,53 @@ function NewsFeedScreen({ user }) {
 
 
 
+  // Global ve Magazin haberler - allCards'dan filtrelenir
+  // veya ayrı Firestore collection'dan (announcements_global, announcements_magazin)
+  // Şimdilik kaynak bazlı filtre + keyword filtresi
+  const GLOBAL_SOURCES = ['Reuters','Bloomberg','BBC','Financial Times','CNBC','WSJ'];
+  const globalCards = allCards.filter(c =>
+    GLOBAL_SOURCES.some(s => (c.kaynak||'').includes(s)) ||
+    /global|dünya|uluslararası|fed|ecb|world bank|imf/i.test(c.baslik+c.icerik)
+  );
+  const magazinCards = allCards.filter(c =>
+    /magazin|ünlü|celebrity|moda|fashion|sosyal medya|instagram|twitter/i.test(c.baslik+c.icerik)
+  );
+  const activeCards = newsTab === 'global' ? globalCards
+    : newsTab === 'magazin' ? magazinCards
+    : cards; // 'tr' - mevcut Türkçe haberler
+
   return (
     <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:cfg.bg,transition:'background 0.5s'}}>
+      {/* Üst ana sekme */}
+      <div style={{display:'flex',background:'rgba(0,0,0,0.3)',borderBottom:`1px solid rgba(255,255,255,0.1)`,flexShrink:0}}>
+        {[
+          {id:'tr',    label:'🇹🇷 Türkiye'},
+          {id:'global',label:'🌍 Global'},
+          {id:'magazin',label:'⭐ Magazin'},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>{setNewsTab(t.id);setIdx(0);}}
+            style={{flex:1,padding:'9px 4px',border:'none',background:'transparent',cursor:'pointer',
+              fontWeight:700,fontSize:11,
+              color:newsTab===t.id?cfg.color:'rgba(255,255,255,0.5)',
+              borderBottom:`2px solid ${newsTab===t.id?cfg.color:'transparent'}`,
+              transition:'all 0.2s'}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {/* Global/Magazin için özel mesaj */}
+      {newsTab==='global' && globalCards.length===0 && (
+        <div style={{padding:'20px 16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:13,flexShrink:0}}>
+          Global haberler için bot'a "BBC Reuters Bloomberg haberlerini çek" komutu ver
+        </div>
+      )}
+      {newsTab==='magazin' && magazinCards.length===0 && (
+        <div style={{padding:'20px 16px',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:13,flexShrink:0}}>
+          Magazin haberleri için admin panelinden "magazin haberi ekle" komutunu dene
+        </div>
+      )}
       {/* Ust bar */}
-      <div style={{padding:'12px 16px 8px',flexShrink:0}}>
+      <div style={{padding:'8px 16px 6px',flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <span style={{fontSize:14}}>{cfg.icon}</span>
@@ -2022,7 +2147,7 @@ function NewsFeedScreen({ user }) {
             {current?.etiket&&<span style={{fontSize:10,background:`${cfg.color}20`,borderRadius:20,padding:'2px 8px',color:cfg.color}}>{current.etiket}</span>}
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <span style={{fontSize:11,color:C.muted}}>{idx+1}/{cards.length}</span>
+            <span style={{fontSize:11,color:C.muted}}>{idx+1}/{filteredCards.length} <span style={{opacity:0.5}}>({allCards.length} toplam)</span></span>
             {saved.length>0&&(
               <button onClick={()=>setShowS(true)}
                 style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'4px 10px',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
@@ -2121,10 +2246,17 @@ function NewsFeedScreen({ user }) {
                 {likes[current?.id]?'❤️':'🤍'}
               </button>
               {current?.url&&(
-                <a href={current.url} target="_blank" rel="noreferrer"
+                <button onClick={()=>setArticle({url:current.url,baslik:current.baslik})}
                   style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:cfg.color,
-                    background:`${cfg.color}15`,borderRadius:20,padding:'6px 12px',textDecoration:'none',fontWeight:700}}>
-                  🔗 {T.haberiOku}
+                    background:`${cfg.color}15`,border:'none',borderRadius:20,padding:'6px 12px',cursor:'pointer',fontWeight:700}}>
+                  📖 Devamını Oku
+                </button>
+              )}
+              {current?.url&&(
+                <a href={current.url} target="_blank" rel="noreferrer"
+                  style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:C.muted,
+                    background:C.border,borderRadius:20,padding:'6px 12px',textDecoration:'none'}}>
+                  🔗
                 </a>
               )}
               <button onClick={()=>{
@@ -2147,6 +2279,38 @@ function NewsFeedScreen({ user }) {
         </div>
       </div>
 
+      {/* Makale okuma modali */}
+      {article && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',
+            background:C.card,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:13,color:C.text,overflow:'hidden',
+                textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{article.baslik}</div>
+              <div style={{fontSize:10,color:C.muted,marginTop:2,overflow:'hidden',
+                textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{article.url}</div>
+            </div>
+            <div style={{display:'flex',gap:8,marginLeft:8}}>
+              <a href={article.url} target="_blank" rel="noreferrer"
+                style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,
+                  padding:'6px 12px',color:C.accent,fontSize:11,fontWeight:700,textDecoration:'none'}}>
+                Tarayıcıda Aç
+              </a>
+              <button onClick={()=>setArticle(null)}
+                style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,
+                  cursor:'pointer',color:C.text,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                ×
+              </button>
+            </div>
+          </div>
+          <iframe
+            src={article.url}
+            style={{flex:1,border:'none',background:'#fff'}}
+            title={article.baslik}
+            sandbox="allow-scripts allow-same-origin allow-popups"
+          />
+        </div>
+      )}
       {/* Yorum modali */}
       {commentNews && (
         <CommentsModal newsId={commentNews.id} newsTitle={commentNews.baslik} user={user} onClose={()=>setCN(null)}/>
@@ -2920,23 +3084,14 @@ export default function App() {
     Object.keys(newC).forEach(k => { C[k] = newC[k]; });
     Object.keys(newT).forEach(k => { T[k] = newT[k]; });
     // s objesi yeniden hesapla (C değişti)
-    // s objesinin TÜM renk bağımlı alanlarını güncelle
-    s.app     = { ...s.app, background:C.bg };
-    s.header  = { padding:'16px 20px 12px', background:C.headerBg||C.card, flexShrink:0 };
-    s.nav     = { display:'flex', background:C.card, borderTop:`1px solid ${C.border}`, flexShrink:0 };
-    s.card    = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:16, marginBottom:12 };
-    s.half    = { background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:14, flex:1 };
-    s.input   = { background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:'12px', color:C.text, fontSize:14, width:'100%', marginBottom:0 };
-    s.label   = { fontSize:10, color:C.muted, letterSpacing:'1.5px', marginBottom:4, display:'block' };
-    s.title   = { fontSize:15, fontWeight:700, color:C.text };
-    s.tiny    = { fontSize:11, color:C.muted, marginTop:2 };
-    s.body    = { fontSize:13, fontWeight:600, color:C.text };
-    s.bigN    = { fontSize:20, fontWeight:800, color:C.text };
-    s.btn     = { background:C.accent, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:800, fontSize:14, color:'#0A0E1A', width:'100%', marginTop:10 };
-    s.btnSec  = { background:C.border, border:'none', borderRadius:12, padding:'14px 20px', cursor:'pointer', fontWeight:700, fontSize:14, color:C.dim, width:'100%', marginTop:10 };
-    s.row     = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:`1px solid ${C.border}` };
-    s.txRow   = { display:'flex', alignItems:'center', padding:'10px 0', borderBottom:`1px solid ${C.border}` };
-    s.scrollArea = { flex:1, overflowY:'auto', padding:16, paddingBottom:24, background:C.bg };
+    // s proxy artık dinamik - C değişince otomatik güncelleniyor
+    // CSS variables ile tüm ::root'u güncelle - inline stil kullanmayan yerleri de etkiler
+    const root = document.documentElement;
+    Object.entries(newC).forEach(([k,v]) => {
+      root.style.setProperty(`--c-${k}`, v);
+    });
+    // Body'yi güncelle
+    document.body.style.cssText = `background:${newC.bg}!important;color:${newC.text}!important;`;
     // CSS variables inject et (inline stil yerine tüm uygulama için)
     const root = document.documentElement;
     Object.keys(newC).forEach(k => root.style.setProperty(`--c-${k}`, newC[k]));
@@ -3021,7 +3176,13 @@ export default function App() {
 
   return (
     <>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} * {-webkit-tap-highlight-color:transparent} body{background:${C.bg};transition:background 0.3s}`}</style>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        * {-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
+        body{background:${C.bg}!important;color:${C.text}!important;transition:background 0.25s,color 0.25s;}
+        input,textarea,select{background:${C.card}!important;color:${C.text}!important;border-color:${C.border}!important;}
+        button{transition:background 0.2s,color 0.2s;}
+      `}</style>
       <div key={themeKey} style={{...s.app, background:C.bg, color:C.text}}>
         {/* Header */}
         <div style={s.header}>
