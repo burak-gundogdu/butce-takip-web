@@ -42,7 +42,7 @@ def is_similar(title1, title2, threshold=0.5):
     return (overlap / smaller) >= threshold if smaller > 0 else False
 
 def get_firebase_token():
-    url = f"[https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=](https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=){FIREBASE_API_KEY}"
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
     res = requests.post(url, json={"email":FIREBASE_EMAIL,"password":FIREBASE_PASSWORD,"returnSecureToken":True},timeout=10).json()
     if "idToken" not in res:
         raise Exception(f"Firebase giris basarisiz: {res}")
