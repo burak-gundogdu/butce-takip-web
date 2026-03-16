@@ -341,7 +341,7 @@ function AuthScreen() {
             <button key={m} onClick={() => { setMode(m); setErr(''); }}
               style={{flex:1,padding:'10px',border:'none',borderRadius:9,cursor:'pointer',fontWeight:700,fontSize:13,
                 background: mode===m ? C.accent : 'transparent', color: mode===m ? '#0A0E1A' : C.muted, transition:'all 0.2s'}}>
-              {m === 'login' ? T.lang === 'en' ? 'Sign In' : 'Giris Yap'}
+              {m === 'login' ? (T.lang === 'en' ? 'Sign In' : 'Giris Yap') : (T.lang === 'en' ? 'Sign Up' : 'Kayit Ol')}
             </button>
           ))}
         </div>
