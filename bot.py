@@ -109,22 +109,15 @@ def fetch_all_news():
     seen_hashes = set()
     seen_titles = [] 
 
-    # --- KAYNAKLAR GÜNCELLENDİ (Ekonomi + Magazin + Influencer + Global) ---
+    # Kaynaklar (Ekonomi, Global, Influencer, Magazin)
     sources = [
-        # Ekonomi & Borsa
         ("NTV Ekonomi",      "https://www.ntv.com.tr/ekonomi.rss",                      0),
         ("Bloomberg HT",     "https://www.bloomberght.com/rss",                         1),
         ("Haberturk Eko",    "https://www.haberturk.com/rss/kategori/ekonomi.xml",      2),
         ("Hurriyet Eko",     "https://www.hurriyet.com.tr/rss/ekonomi",                 3),
-        
-        # Global Haberler
         ("BBC Turkce",       "https://feeds.bbci.co.uk/turkce/rss.xml",                 0),
-        
-        # Teknoloji & Influencer & Youtuber Haberleri
         ("Webtekno",         "https://www.webtekno.com/rss.xml",                        1),
         ("ShiftDelete",      "https://shiftdelete.net/feed",                            2),
-        
-        # Magazin & Popüler Kültür
         ("Hurriyet Magazin", "https://www.hurriyet.com.tr/rss/magazin",                 3),
         ("Haberturk Magazin","https://www.haberturk.com/rss/kategori/magazin.xml",      0),
         ("Milliyet Magazin", "https://www.milliyet.com.tr/rss/rssNew/magazinRss.xml",   1),
@@ -133,7 +126,7 @@ def fetch_all_news():
     ]
 
     for name, url, ua_idx in sources:
-        items = fetch_rss_direct(name, url, ua_idx, limit=10) # Limit biraz artırıldı
+        items = fetch_rss_direct(name, url, ua_idx, limit=10)
         added = 0
         for item in items:
             if item["hash"] in seen_hashes:
@@ -244,7 +237,7 @@ Tam {count} farkli konuda haber sec."""
 
         raw = res["choices"][0]["message"]["content"]
         
-        # HATA VEREN KISIM BURASIYDI: Artik Regex yerine guvenli replace kullaniyoruz
+        # Guvenli string temizleme (Regex hatasi alinmamasi icin)
         clean = raw.replace("```json", "").replace("```", "").strip()
         
         match = re.search(r'\[[\s\S]*\]', clean)
@@ -261,12 +254,109 @@ Tam {count} farkli konuda haber sec."""
     except Exception as e:
         print(f"  AI hatasi: {e}")
         return []
-http://googleusercontent.com/immersive_entry_chip/0
 
-### Neler Değişti?
-1. **Yeni RSS Kaynakları Eklendi:** Sadece ekonomiye saplanıp kalmaması için Webtekno, ShiftDelete (Fenomen/Teknoloji haberleri için harikadır), Onedio, Hürriyet Magazin ve Habertürk Magazin eklendi.
-2. **Global Kaynak Eklendi:** Global sekmen dolsun diye listeye "BBC Türkçe"yi de yerleştirdim.
-3. **Yapay Zeka Promptu Güncellendi:** Groq'a gönderilen talimatta yapay zekaya artık *"Mutlaka bu 3 kategoriden karma bir liste yap: 1. Türkiye Ekonomi, 2. Global, 3. Magazin/Youtuber/Sosyal Medya"* dedik.
-4. **Etiketler Güncellendi:** Uygulama içinde filtreleme yapan etiketlere **"⭐ Magazin", "📱 Sosyal Medya", "🔥 Fenomen"** kavramları eklendi. 
+def enrich_with_images(ai_list, news_items_map):
+    enriched = []
+    for item in ai_list:
+        img = item.get("image","").strip()
+        url = item.get("url","")
+        if url and (not img or not img.startswith('http') or len(img) < 20):
+            fetched = fetch_og_image(url, timeout=8)
+            if fetched:
+                img = fetched
+                print(f"  Resim: {item.get('baslik','')[:40]} → {img[:50]}")
+        item["image"] = img if img else ""
+        enriched.append(item)
+        time.sleep(0.15)
+    has_img = sum(1 for i in enriched if i.get("image"))
+    print(f"  {has_img}/{len(enriched)} haberde gorsel var")
+    return enriched
 
-Botunu tekrar çalıştırdığında (önceki koddan kalan eski ekonomi haberleriyle karışık olarak) yeni Magazin ve Global haberlerin sisteme düştüğünü göreceksin! Deneyip sonucu söylersen süper olur.
+def save_to_firestore(token, data):
+    url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/announcements"
+    now_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    doc = {"fields": {
+        "baslik":    {"stringValue": str(data.get("baslik",""))[:100]},
+        "icerik":    {"stringValue": str(data.get("icerik",""))},
+        "analiz":    {"stringValue": str(data.get("analiz",""))},
+        "etiket":    {"stringValue": str(data.get("etiket","⚪ Notr"))},
+        "tip":       {"stringValue": "haber"},
+        "kaynak":    {"stringValue": str(data.get("kaynak",""))},
+        "url":       {"stringValue": str(data.get("url",""))},
+        "image":     {"stringValue": str(data.get("image",""))},
+        "titleHash": {"stringValue": str(data.get("titleHash",""))},
+        "createdAt": {"timestampValue": now_str},
+        "publishedAt":{"stringValue": now_str},
+    }}
+    try:
+        r = requests.post(url, headers={"Authorization":f"Bearer {token}"}, json=doc, timeout=10)
+        return r.status_code == 200
+    except:
+        return False
+
+def main():
+    print("=" * 50)
+    print(f" Kapsamli Haber Botu | {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}")
+    print("=" * 50)
+
+    print("\n[1] Firebase giris...")
+    token = get_firebase_token()
+    print("    OK")
+
+    print("\n[2] Eski haberler temizleniyor (24h+)...")
+    delete_old_news(token)
+
+    print("\n[3] Mevcut haberler aliniyor...")
+    existing_hashes, existing_titles = get_existing_data(token)
+    print(f"    Mevcut: {len(existing_hashes)} haber")
+
+    print("\n[4] RSS kaynaklarindan haberler cekiliyor...")
+    all_items = fetch_all_news()
+    if not all_items:
+        print("\nHATA: Hic haber cekemedik!"); return
+
+    print("\n[5] Yeni ve benzersiz haberler filtreleniyor...")
+    new_items = []
+    for item in all_items:
+        if item["hash"] in existing_hashes:
+            continue
+        too_similar = any(is_similar(item["title"], et, threshold=0.45) for et in existing_titles)
+        if too_similar:
+            continue
+        new_items.append(item)
+
+    print(f"    {len(new_items)} gercekten yeni haber bulundu")
+
+    if not new_items:
+        print("    Yeni haber yok, cikiliyor.")
+        return
+
+    print("\n[6] AI analiz ve secim...")
+    ai_list = analyze_with_ai(new_items)
+    if not ai_list:
+        print("HATA: AI bos dondu!"); return
+
+    print("\n[7] Resimler ekleniyor...")
+    ai_list = enrich_with_images(ai_list, {i["hash"]:i for i in new_items})
+
+    print("\n[8] Firestore'a kaydediliyor...")
+    saved = 0
+    for item in ai_list:
+        h = item.get("titleHash","")
+        if h in existing_hashes:
+            print(f"    ATLA: {item.get('baslik','')[:50]}")
+            continue
+        if save_to_firestore(token, item):
+            has_img = "🖼️" if item.get("image") else "  "
+            print(f"    OK {has_img}: {item.get('baslik','')[:60]}")
+            existing_hashes.add(h)
+            existing_titles.append(item.get("baslik",""))
+            saved += 1
+        time.sleep(0.2)
+
+    print(f"\n{'='*50}")
+    print(f" TAMAMLANDI! {saved} yeni haber yayinlandi.")
+    print(f"{'='*50}")
+
+if __name__ == "__main__":
+    main()
