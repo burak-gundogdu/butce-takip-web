@@ -2283,20 +2283,20 @@ function NewsFeedScreen({ user }) {
         </div>
       </div>
 
-      {/* Makale okuma modali */}
+{/* Makale okuma modali (Temiz Metin) */}
       {article && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',
             background:C.card,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:800,fontSize:13,color:C.text,overflow:'hidden',
+              <div style={{fontWeight:800,fontSize:14,color:C.text,overflow:'hidden',
                 textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{article.baslik}</div>
             </div>
             <div style={{display:'flex',gap:8,marginLeft:8}}>
               <a href={article.url} target="_blank" rel="noreferrer"
                 style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,
                   padding:'6px 12px',color:C.accent,fontSize:11,fontWeight:700,textDecoration:'none'}}>
-                Tarayıcıda Aç
+                Orijinal Site
               </a>
               <button onClick={()=>setArticle(null)}
                 style={{background:C.border,border:'none',borderRadius:20,width:32,height:32,
@@ -2305,7 +2305,19 @@ function NewsFeedScreen({ user }) {
               </button>
             </div>
           </div>
-          <iframe src={article.url} style={{flex:1,border:'none',background:'#fff'}} title={article.baslik} sandbox="allow-scripts allow-same-origin allow-popups" />
+          
+          <div style={{flex:1, overflowY:'auto', padding:20, background:C.bg}}>
+            {articleLoading ? (
+              <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:10}}>
+                <Spinner size={30} color={C.accent}/>
+                <span style={{color:C.muted}}>Haber metni çekiliyor...</span>
+              </div>
+            ) : (
+              <div style={{fontSize:15, lineHeight:'1.8', color:C.text, whiteSpace:'pre-wrap', maxWidth:600, margin:'0 auto'}}>
+                {article.text}
+              </div>
+            )}
+          </div>
         </div>
       )}
       
