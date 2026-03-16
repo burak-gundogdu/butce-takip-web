@@ -135,8 +135,6 @@ const gs = () => ({
 });
 // s proxy - her erişimde güncel C değerlerini okur
 const s = new Proxy({}, { get: (_, k) => gs()[k] || {} });
-  tag: { display:'inline-block', padding:'2px 6px', borderRadius:4, fontSize:10, fontWeight:700 },
-};
 
 // ─── YARDIMCILAR ───────────────────────────────────────────────────────────
 const fmt = n => '₺' + (n||0).toLocaleString('tr-TR', {maximumFractionDigits:0});
