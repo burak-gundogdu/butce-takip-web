@@ -109,25 +109,31 @@ def fetch_all_news():
     seen_hashes = set()
     seen_titles = [] 
 
-    # Kaynaklar (Ekonomi, Global, Influencer, Magazin)
+    # Kaynaklar (Ekonomi kisildi, Magazin ve Sosyal Medya artirildi)
     sources = [
-        ("NTV Ekonomi",      "https://www.ntv.com.tr/ekonomi.rss",                      0),
+        # Ekonomi (Temel Olanlar)
         ("Bloomberg HT",     "https://www.bloomberght.com/rss",                         1),
         ("Haberturk Eko",    "https://www.haberturk.com/rss/kategori/ekonomi.xml",      2),
-        ("Hurriyet Eko",     "https://www.hurriyet.com.tr/rss/ekonomi",                 3),
+        
+        # Global
         ("BBC Turkce",       "https://feeds.bbci.co.uk/turkce/rss.xml",                 0),
-        ("Webtekno",         "https://www.webtekno.com/rss.xml",                        1),
-        ("ShiftDelete",      "https://shiftdelete.net/feed",                            2),
-        ("Hurriyet Magazin", "https://www.hurriyet.com.tr/rss/magazin",                 3),
-        ("Haberturk Magazin","https://www.haberturk.com/rss/kategori/magazin.xml",      0),
-        ("Milliyet Magazin", "https://www.milliyet.com.tr/rss/rssNew/magazinRss.xml",   1),
-        ("NTV Yasam",        "https://www.ntv.com.tr/yasam.rss",                        2),
-        ("Onedio",           "https://onedio.com/rss",                                  3),
+        
+        # Teknoloji & Sosyal Medya Fenomenleri (Webtekno cikarildi, saglamlar eklendi)
+        ("ShiftDelete",      "https://shiftdelete.net/feed",                            1),
+        ("DonanimHaber",     "https://www.donanimhaber.com/rss/tum/",                   2),
+        ("Log.com.tr",       "https://www.log.com.tr/feed/",                            3),
+        
+        # Magazin, Dizi, Unluler & Sosyal Medya Dedikodulari
+        ("Hurriyet Mag",     "https://www.hurriyet.com.tr/rss/magazin",                 0),
+        ("Haberturk Mag",    "https://www.haberturk.com/rss/kategori/magazin.xml",      1),
+        ("Posta Magazin",    "https://www.posta.com.tr/rss/magazin",                    2),
+        ("Sabah Magazin",    "https://www.sabah.com.tr/rss/magazin.xml",                3),
         ("Ensonhaber Mag",   "https://www.ensonhaber.com/rss/magazin.xml",              0),
+        ("Medyatava",        "https://www.medyatava.com/rss",                           1),
     ]
 
     for name, url, ua_idx in sources:
-        items = fetch_rss_direct(name, url, ua_idx, limit=10)
+        items = fetch_rss_direct(name, url, ua_idx, limit=12) # Kaynak basina haberi 12'ye cikardik
         added = 0
         for item in items:
             if item["hash"] in seen_hashes:
@@ -230,18 +236,25 @@ Tam {count} farkli konuda haber sec."""
 
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     try:
+        # Karakter sinirini 14000'e sabitledik (Groq Rate Limit/Token sinirina takilmamak icin)
         res = requests.post("https://api.groq.com/openai/v1/chat/completions",
             headers=headers, timeout=60, json={
                 "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {"role":"system","content":prompt},
-                    # Karakter sinirini 20000'e cikardik ki tum haberler sigsin
-                    {"role":"user","content":f"HABERLER:\n{news_text[:20000]}"}
+                    {"role":"user","content":f"HABERLER:\n{news_text[:14000]}"}
                 ],
-                "temperature": 0.1, "max_tokens": 6000,
-            }).json()
+                "temperature": 0.1, "max_tokens": 4000,
+            })
+            
+        res_json = res.json()
+        
+        # API'den gelen cevapta bir hata mesaji varsa bunu ekrana yazdir
+        if "choices" not in res_json:
+            print(f"  API REDDETTI (Hata Detayi): {json.dumps(res_json, indent=2)}")
+            return []
 
-        raw = res["choices"][0]["message"]["content"]
+        raw = res_json["choices"][0]["message"]["content"]
         
         # Guvenli string temizleme (Regex hatasi alinmamasi icin)
         clean = raw.replace("```json", "").replace("```", "").strip()
