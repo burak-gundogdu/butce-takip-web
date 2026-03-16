@@ -195,7 +195,7 @@ def analyze_with_ai(news_items):
         print("  HATA: GEMINI_API_KEY bulunamadi! Github Secrets'i kontrol et.")
         return []
 
-    items_copy = list(news_items)
+    items_copy = list(news_items)[:45]
     random.shuffle(items_copy)
 
     lines = []
@@ -242,7 +242,7 @@ Tam {count} farkli konuda haber sec."""
     }
 
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=60)
+        res = requests.post(url, headers=headers, json=payload, timeout=120)
         res_json = res.json()
         
         if "candidates" not in res_json:
