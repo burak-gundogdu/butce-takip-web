@@ -263,21 +263,76 @@ Tam {count} farkli konuda haber sec."""
         print(f"  AI hatasi: {e}")
         return []
 
+def generate_ai_image(baslik, etiket=""):
+    """Pollinations.ai ile AI görsel üret - ücretsiz, kayıt gerektirmez"""
+    try:
+        # Başlıktan İngilizce prompt oluştur (Gemini ile)
+        if not GEMINI_API_KEY:
+            return ""
+        
+        prompt_req = f"Convert this Turkish news headline to a short 8-word English image prompt for a financial news illustration. No text, no people faces. Headline: {baslik}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        res = requests.post(url,
+            headers={"Content-Type":"application/json"},
+            json={"contents":[{"parts":[{"text":prompt_req}]}],
+                  "generationConfig":{"temperature":0.3,"maxOutputTokens":50}},
+            timeout=15)
+        
+        if res.status_code != 200:
+            return ""
+        
+        eng_prompt = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        eng_prompt = eng_prompt.replace('"','').replace("'","").strip()[:100]
+        
+        # Etiket bazlı stil ekle
+        style = "financial news illustration, dark blue theme, professional"
+        if "Magazin" in etiket or "Sosyal" in etiket:
+            style = "entertainment news, colorful, social media theme, modern"
+        elif "Riskli" in etiket:
+            style = "financial risk, red warning, dramatic"
+        elif "Pozitif" in etiket:
+            style = "positive growth, green upward trend, optimistic"
+        
+        full_prompt = f"{eng_prompt}, {style}, no text, no logos"
+        encoded = requests.utils.quote(full_prompt)
+        img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=450&nologo=true&seed={abs(hash(baslik))%9999}"
+        
+        # URL'nin erişilebilir olduğunu doğrula
+        check = requests.head(img_url, timeout=10, allow_redirects=True)
+        if check.status_code == 200:
+            print(f"  🤖 AI görsel: {baslik[:40]}")
+            return img_url
+    except Exception as e:
+        print(f"  AI görsel hatası: {e}")
+    return ""
+
 def enrich_with_images(ai_list, news_items_map):
     enriched = []
     for item in ai_list:
         img = item.get("image","").strip()
         url = item.get("url","")
+        
+        # 1. Önce orijinal kaynaktan og:image çek
         if url and (not img or not img.startswith('http') or len(img) < 20):
             fetched = fetch_og_image(url, timeout=8)
             if fetched:
                 img = fetched
-                print(f"  Resim: {item.get('baslik','')[:40]} → {img[:50]}")
+                print(f"  🖼️  OG görsel: {item.get('baslik','')[:40]}")
+        
+        # 2. Görsel hala yoksa Pollinations.ai ile AI görsel üret
+        if not img or len(img) < 10:
+            ai_img = generate_ai_image(item.get("baslik",""), item.get("etiket",""))
+            if ai_img:
+                img = ai_img
+                item["aiImage"] = True  # AI üretimi olduğunu işaretle
+        
         item["image"] = img if img else ""
         enriched.append(item)
-        time.sleep(0.15)
+        time.sleep(0.2)
+    
     has_img = sum(1 for i in enriched if i.get("image"))
-    print(f"  {has_img}/{len(enriched)} haberde gorsel var")
+    ai_img_count = sum(1 for i in enriched if i.get("aiImage"))
+    print(f"  {has_img}/{len(enriched)} haberde görsel ({ai_img_count} AI üretimi)")
     return enriched
 
 def save_to_firestore(token, data):
@@ -293,6 +348,7 @@ def save_to_firestore(token, data):
         "url":       {"stringValue": str(data.get("url",""))},
         "image":     {"stringValue": str(data.get("image",""))},
         "titleHash": {"stringValue": str(data.get("titleHash",""))},
+        "aiImage":   {"booleanValue": bool(data.get("aiImage", False))},
         "createdAt": {"timestampValue": now_str},
         "publishedAt":{"stringValue": now_str},
     }}

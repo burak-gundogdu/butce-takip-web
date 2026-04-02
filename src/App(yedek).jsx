@@ -1924,8 +1924,7 @@ function NewsFeedScreen({ user }) {
   const [catFilter, setCatF]    = useState('all');
   const [article, setArticle]   = useState(null);
   const [articleLoading, setArticleLoading] = useState(false);
-  const [newsTab, setNewsTab]   = useState('tr');
-  const [viewMode, setVM]       = useState('swipe');
+  const [newsTab, setNewsTab]   = useState('tr'); // 'tr' | 'global' | 'magazin' 
   const startRef                = useRef(null);
   const dragRef                 = useRef({x:0,y:0});
 
@@ -1956,17 +1955,16 @@ function NewsFeedScreen({ user }) {
 
   // Kategori filtresi
   const NEWS_CATS = [
-    {id:'all',    label:'📰 Tümü',      match: () => true},
-    {id:'aiuret', label:'🤖 AI Üretimi',match: c => c.aiImage === true},
-    {id:'doviz',  label:'💵 Döviz',     match: c => /dolar|euro|kur|döviz|usd|eur|sterlin/i.test(c.baslik+c.icerik)},
-    {id:'borsa',  label:'📊 Borsa',     match: c => /bist|hisse|borsa|endeks|xu100|piyasa/i.test(c.baslik+c.icerik)},
-    {id:'altin',  label:'🥇 Altın',     match: c => /altın|altin|gumus|gümüş|emtia/i.test(c.baslik+c.icerik)},
-    {id:'kripto', label:'₿ Kripto',     match: c => /bitcoin|kripto|btc|eth|crypto/i.test(c.baslik+c.icerik)},
-    {id:'mb',     label:'🏦 MB/Faiz',   match: c => /faiz|merkez|tcmb|enflasyon|tüfe/i.test(c.baslik+c.icerik)},
-    {id:'sirket', label:'🏢 Şirket',    match: c => /şirket|sirket|thyao|garan|kar|zarar|bilanço|halka arz/i.test(c.baslik+c.icerik)},
-    {id:'enerji', label:'⚡ Enerji',    match: c => /petrol|doğalgaz|enerji|elektrik|opec/i.test(c.baslik+c.icerik)},
-    {id:'pozitif',label:'🟢 Pozitif',   match: c => (c.etiket||'').includes('Pozitif')},
-    {id:'riskli', label:'🔴 Riskli',    match: c => (c.etiket||'').includes('Riskli')},
+    {id:'all',label:'📰 Tümü', match: () => true},
+    {id:'doviz',label:'💵 Döviz', match: c => /dolar|euro|kur|döviz|usd|eur|sterlin/i.test(c.baslik+c.icerik)},
+    {id:'borsa',label:'📊 Borsa', match: c => /bist|hisse|borsa|endeks|xu100|piyasa/i.test(c.baslik+c.icerik)},
+    {id:'altin',label:'🥇 Altın', match: c => /altın|altin|gumus|gümüş|emtia/i.test(c.baslik+c.icerik)},
+    {id:'kripto',label:'₿ Kripto', match: c => /bitcoin|kripto|btc|eth|crypto/i.test(c.baslik+c.icerik)},
+    {id:'mb',label:'🏦 MB/Faiz', match: c => /faiz|merkez|tcmb|enflasyon|tüfe/i.test(c.baslik+c.icerik)},
+    {id:'sirket',label:'🏢 Şirket', match: c => /şirket|sirket|thyao|garan|kar|zarar|bilanço|halka arz/i.test(c.baslik+c.icerik)},
+    {id:'enerji',label:'⚡ Enerji', match: c => /petrol|doğalgaz|enerji|elektrik|opec/i.test(c.baslik+c.icerik)},
+    {id:'pozitif',label:'🟢 Pozitif', match: c => (c.etiket||'').includes('Pozitif') || (c.etiket||'').includes('Yukselis')},
+    {id:'riskli',label:'🔴 Riskli', match: c => (c.etiket||'').includes('Riskli') || (c.etiket||'').includes('Dusus')},
   ];
   const activeCatObj = NEWS_CATS.find(n => n.id === catFilter) || NEWS_CATS[0];
   const filteredCards = catFilter === 'all' ? activeCards : activeCards.filter(activeCatObj.match);
@@ -2148,15 +2146,7 @@ function NewsFeedScreen({ user }) {
             {current?.etiket&&<span style={{fontSize:10,background:`${cfg.color}20`,borderRadius:20,padding:'2px 8px',color:cfg.color}}>{current.etiket}</span>}
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <span style={{fontSize:11,color:C.muted}}>
-              {viewMode==='swipe' ? `${idx+1}/${filteredCards.length}` : filteredCards.length}
-              <span style={{opacity:0.5}}> ({allCards.length})</span>
-            </span>
-            <button onClick={()=>setVM(v=>v==='swipe'?'grid':'swipe')}
-              style={{background:C.border,border:'none',borderRadius:20,padding:'4px 10px',
-                color:C.text,fontSize:13,cursor:'pointer',fontWeight:700}}>
-              {viewMode==='swipe'?'⊞ Grid':'☰ Swipe'}
-            </button>
+            <span style={{fontSize:11,color:C.muted}}>{idx+1}/{filteredCards.length} <span style={{opacity:0.5}}>({allCards.length} toplam)</span></span>
             {saved.length>0&&(
               <button onClick={()=>setShowS(true)}
                 style={{background:C.accentBg,border:`1px solid ${C.accent}40`,borderRadius:20,padding:'4px 10px',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
@@ -2183,83 +2173,7 @@ function NewsFeedScreen({ user }) {
         </div>
       </div>
 
-      {/* ─── GÖRÜNÜM: SWIPE veya GRID ─── */}
-      {viewMode === 'grid' ? (
-        /* Mona tarzı grid liste */
-        <div style={{flex:1,overflowY:'auto',padding:'8px 12px'}}>
-          {filteredCards.length === 0 && (
-            <div style={{textAlign:'center',padding:40,color:C.muted}}>Bu kategoride haber yok</div>
-          )}
-          {/* İlk haber - büyük kart */}
-          {filteredCards[0] && (() => {
-            const n = filteredCards[0];
-            const ncfg = tipCfg[n.tip]||tipCfg.haber;
-            return (
-              <div key={n.id} onClick={()=>{setIdx(0);setVM('swipe');}}
-                style={{borderRadius:16,overflow:'hidden',marginBottom:12,cursor:'pointer',
-                  border:`1px solid ${ncfg.color}30`,background:ncfg.bg}}>
-                {n.image && (
-                  <div style={{position:'relative',height:180}}>
-                    <img src={n.image} alt={n.baslik}
-                      style={{width:'100%',height:'100%',objectFit:'cover'}}
-                      onError={e=>{e.target.parentElement.style.display='none';}}/>
-                    <div style={{position:'absolute',inset:0,background:'linear-gradient(to bottom,transparent 40%,rgba(0,0,0,0.8))'}}>
-                    </div>
-                    <div style={{position:'absolute',bottom:10,left:12,right:12}}>
-                      {n.aiImage && <span style={{fontSize:9,background:'rgba(139,92,246,0.9)',color:'#fff',borderRadius:10,padding:'2px 7px',fontWeight:700,marginBottom:4,display:'inline-block'}}>🤖 AI Üretimi</span>}
-                      <div style={{fontSize:16,fontWeight:900,color:'#fff',lineHeight:'21px',textShadow:'0 1px 4px rgba(0,0,0,0.8)'}}>{n.baslik}</div>
-                    </div>
-                  </div>
-                )}
-                {!n.image && (
-                  <div style={{padding:16}}>
-                    {n.aiImage && <span style={{fontSize:9,background:`${ncfg.color}30`,color:ncfg.color,borderRadius:10,padding:'2px 7px',fontWeight:700,marginBottom:6,display:'inline-block'}}>🤖 AI Üretimi</span>}
-                    <div style={{fontSize:16,fontWeight:900,color:C.text,lineHeight:'22px'}}>{n.baslik}</div>
-                  </div>
-                )}
-                <div style={{padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span style={{fontSize:10,color:ncfg.color,fontWeight:700,background:`${ncfg.color}20`,borderRadius:20,padding:'2px 8px'}}>{n.kaynak||'Haber'}</span>
-                  <span style={{fontSize:10,color:C.muted}}>{n.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}</span>
-                </div>
-              </div>
-            );
-          })()}
-          {/* Geri kalanlar - 2 kolonlu küçük kartlar */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            {filteredCards.slice(1).map((n, i) => {
-              const ncfg = tipCfg[n.tip]||tipCfg.haber;
-              return (
-                <div key={n.id} onClick={()=>{setIdx(i+1);setVM('swipe');}}
-                  style={{borderRadius:14,overflow:'hidden',cursor:'pointer',
-                    border:`1px solid ${ncfg.color}25`,background:ncfg.bg,display:'flex',flexDirection:'column'}}>
-                  {n.image && (
-                    <div style={{position:'relative',height:90}}>
-                      <img src={n.image} alt={n.baslik}
-                        style={{width:'100%',height:'100%',objectFit:'cover'}}
-                        onError={e=>{e.target.parentElement.style.display='none';}}/>
-                      {n.aiImage && (
-                        <div style={{position:'absolute',top:4,left:4,fontSize:8,background:'rgba(139,92,246,0.85)',
-                          color:'#fff',borderRadius:8,padding:'1px 5px',fontWeight:700}}>🤖</div>
-                      )}
-                    </div>
-                  )}
-                  <div style={{padding:'8px 10px',flex:1}}>
-                    <div style={{fontSize:11,fontWeight:800,color:C.text,lineHeight:'15px',marginBottom:4,
-                      display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
-                      {n.baslik}
-                    </div>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'auto'}}>
-                      <span style={{fontSize:9,color:ncfg.color,fontWeight:700}}>{n.kaynak?.slice(0,12)||''}</span>
-                      <span style={{fontSize:9,color:C.muted}}>{n.createdAt?.toDate?.()?.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})||''}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-      /* Mevcut swipe layout */
+      {/* Kart alani */}
       <div style={{flex:1,display:'flex',flexDirection:'column',padding:'8px 16px',position:'relative',overflow:'hidden'}}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
@@ -2286,12 +2200,6 @@ function NewsFeedScreen({ user }) {
                 style={{width:'100%',height:'100%',objectFit:'cover'}}
                 onError={e=>{e.target.style.display='none'; e.target.parentElement.style.display='none';}}/>
               <div style={{position:'absolute',inset:0,background:`linear-gradient(to bottom, transparent 40%, ${cfg.bg} 100%)`}}/>
-              {current?.aiImage && (
-                <div style={{position:'absolute',top:10,left:12,fontSize:10,fontWeight:700,
-                  background:'rgba(139,92,246,0.9)',color:'#fff',borderRadius:20,padding:'3px 10px'}}>
-                  🤖 AI Üretimi
-                </div>
-              )}
             </div>
           )}
 
@@ -2375,9 +2283,7 @@ function NewsFeedScreen({ user }) {
         </div>
       </div>
 
-      )} {/* viewMode grid/swipe kapanış */}
-
-      {/* Makale okuma modali (Temiz Metin) */}
+{/* Makale okuma modali (Temiz Metin) */}
       {article && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',
@@ -2426,8 +2332,7 @@ function NewsFeedScreen({ user }) {
         </div>
       )}
 
-      {/* Navigasyon butonlari - sadece swipe modda */}
-      {viewMode === 'swipe' && (
+      {/* Navigasyon butonlari */}
       <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:24,padding:'12px 16px 20px',flexShrink:0}}>
         <button onClick={goPrev} disabled={idx===0}
           style={{width:52,height:52,borderRadius:26,background:idx===0?'#111':C.yellowBg,
@@ -2443,7 +2348,6 @@ function NewsFeedScreen({ user }) {
             border:`2px solid ${idx>=cards.length-1?C.border:C.blue}`,display:'flex',alignItems:'center',
             justifyContent:'center',cursor:idx>=cards.length-1?'default':'pointer',fontSize:22,opacity:idx>=cards.length-1?0.3:1}}>↓</button>
       </div>
-      )} {/* viewMode swipe nav kapanış */}
     </div>
   );
 }
