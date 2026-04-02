@@ -266,42 +266,46 @@ Tam {count} farkli konuda haber sec."""
 def generate_ai_image(baslik, etiket=""):
     """Pollinations.ai ile AI görsel üret - ücretsiz, kayıt gerektirmez"""
     try:
-        # Başlıktan İngilizce prompt oluştur (Gemini ile)
         if not GEMINI_API_KEY:
             return ""
-        
-        prompt_req = f"Convert this Turkish news headline to a short 8-word English image prompt for a financial news illustration. No text, no people faces. Headline: {baslik}"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-        res = requests.post(url,
-            headers={"Content-Type":"application/json"},
-            json={"contents":[{"parts":[{"text":prompt_req}]}],
-                  "generationConfig":{"temperature":0.3,"maxOutputTokens":50}},
-            timeout=15)
-        
+
+        # Başlıktan kısa İngilizce prompt üret
+        prompt_req = f"Convert this Turkish news headline to a short 6-word English image description. Only objects/scenes, no people, no text. Reply with ONLY the description. Headline: {baslik}"
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        res = requests.post(gemini_url,
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": prompt_req}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 30}
+            },
+            timeout=10
+        )
         if res.status_code != 200:
             return ""
-        
+
         eng_prompt = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-        eng_prompt = eng_prompt.replace('"','').replace("'","").strip()[:100]
-        
-        # Etiket bazlı stil ekle
-        style = "financial news illustration, dark blue theme, professional"
+        eng_prompt = eng_prompt.replace('"','').replace("'","").strip()[:80]
+
+        # Etiket bazlı stil
         if "Magazin" in etiket or "Sosyal" in etiket:
-            style = "entertainment news, colorful, social media theme, modern"
+            style = "colorful entertainment background, vibrant, modern"
         elif "Riskli" in etiket:
-            style = "financial risk, red warning, dramatic"
-        elif "Pozitif" in etiket:
-            style = "positive growth, green upward trend, optimistic"
-        
-        full_prompt = f"{eng_prompt}, {style}, no text, no logos"
+            style = "dramatic red financial chart, dark"
+        elif "Pozitif" in etiket or "Ekonomi" in etiket:
+            style = "green growth chart, professional finance"
+        elif "Piyasa" in etiket or "Borsa" in etiket:
+            style = "stock market display, blue digital, cinematic"
+        else:
+            style = "professional news illustration, dark blue"
+
+        full_prompt = f"{eng_prompt}, {style}, no text overlay, no logos, 4k"
+        # Pollinations.ai - HEAD check yok, direkt URL döndür (async üretim)
         encoded = requests.utils.quote(full_prompt)
-        img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=450&nologo=true&seed={abs(hash(baslik))%9999}"
-        
-        # URL'nin erişilebilir olduğunu doğrula
-        check = requests.head(img_url, timeout=10, allow_redirects=True)
-        if check.status_code == 200:
-            print(f"  🤖 AI görsel: {baslik[:40]}")
-            return img_url
+        seed = abs(hash(baslik)) % 99999
+        img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=450&nologo=true&enhance=true&seed={seed}"
+        print(f"  🤖 AI görsel URL: {baslik[:40]}")
+        return img_url
+
     except Exception as e:
         print(f"  AI görsel hatası: {e}")
     return ""
